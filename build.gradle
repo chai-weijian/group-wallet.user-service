@@ -61,6 +61,30 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test:2.5.3'
 }
 
+protobuf {
+    protoc {
+        artifact = 'com.google.protobuf:protoc:3.17.3'
+    }
+    plugins {
+        grpc {
+            artifact = 'io.grpc:protoc-gen-grpc-java:1.39.0'
+        }
+    }
+    generateProtoTasks {
+        all()*.plugins {
+            grpc {}
+        }
+    }
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir "${buildDir.absolutePath}/generated/source/proto/main"
+        }
+    }
+}
+
 test {
     useJUnitPlatform()
 }
