@@ -1,0 +1,39 @@
+
+spring.cloud.stream.bindings:
+  createUser-in-0:
+    destination: groupwallet.userservice.CreateUser-requests
+  createUser-in-1:
+    destination: groupwallet.userservice.resetPreviouslySeenUid
+  createUser-in-2:
+    destination: groupwallet.userservice.resetPreviouslySeenUserId
+  createUser-out-0:
+    destination: groupwallet.userservice.CreateUser-responses
+  initializeUser-in-0:
+    destination: groupwallet.userservice.UserCreated-events
+
+spring.cloud.stream.kafka.streams.binder.functions:
+  createUser:
+    application-id: groupwallet.userservice.createUser-app
+  initializeUser:
+    application-id: groupwallet.userservice.initializeUser-app
+
+spring.cloud.stream.kafka.streams.binder:
+  configuration:
+    schema.registry.url: http://localhost:8081
+    commit.interval.ms: 0
+
+spring:
+  cloud:
+    function:
+      definition: createUser;initializeUser
+  kafka:
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: io.confluent.kafka.serializers.protobuf.KafkaProtobufSerializer
+    consumer:
+      value-deserializer: io.confluent.kafka.serializers.protobuf.KafkaProtobufDeserializer
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    properties:
+      schema.registry.url: http://localhost:8081
+
+grpc.server.port: 8091
