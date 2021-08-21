@@ -12,16 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package com.chaiweijian.groupwallet.userservice;
+package com.chaiweijian.groupwallet.userservice.util;
 
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
+import com.chaiweijian.groupwallet.userservice.v1.User;
 
-@SpringBootApplication
-public class UserServiceApplication {
-
-    public static void main(String[] args) {
-        SpringApplication.run(UserServiceApplication.class, args);
+public class SimpleUserFormatter {
+    public static User format(User user) {
+        return user.toBuilder()
+                .setDisplayName(user.getDisplayName().trim())
+                .setEmail(user.getEmail().trim())
+                .build();
     }
-
 }

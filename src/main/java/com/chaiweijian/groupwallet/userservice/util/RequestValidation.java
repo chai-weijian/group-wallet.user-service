@@ -12,16 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package com.chaiweijian.groupwallet.userservice;
+package com.chaiweijian.groupwallet.userservice.util;
 
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
+import lombok.AllArgsConstructor;
+import lombok.Data;
 
-@SpringBootApplication
-public class UserServiceApplication {
-
-    public static void main(String[] args) {
-        SpringApplication.run(UserServiceApplication.class, args);
-    }
-
+@Data
+@AllArgsConstructor
+public final class RequestValidation<T> {
+    private final T request;
+    // Use fail instead of pass, since validation
+    // usually check against some precondition
+    // is not met, rather than check against all
+    // precondition met
+    private final boolean failed;
 }

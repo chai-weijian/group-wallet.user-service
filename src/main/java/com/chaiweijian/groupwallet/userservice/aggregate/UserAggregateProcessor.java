@@ -15,18 +15,16 @@
 package com.chaiweijian.groupwallet.userservice.aggregate;
 
 import com.chaiweijian.groupwallet.userservice.v1.User;
-import com.chaiweijian.groupwallet.userservice.v1.UserCreated;
 import io.confluent.kafka.streams.serdes.protobuf.KafkaProtobufSerde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.utils.Bytes;
-import org.apache.kafka.streams.kstream.Grouped;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Materialized;
 import org.apache.kafka.streams.state.KeyValueStore;
 import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Component;
 
-import java.util.function.Consumer;
+import java.util.function.BiFunction;
 
 @Component
 public class UserAggregateProcessor {
@@ -37,30 +35,35 @@ public class UserAggregateProcessor {
         this.userSerde = userSerde;
     }
 
-    // When a user is created, the system need to have a way
-    // to retrieve the user by uid or name
-    // This processor prepares the system to serve both queries
+    // Maintain user aggregate by subscribing to all events that
+    // affect a user.
     @Bean
-    public Consumer<KStream<String, UserCreated>> initializeUser() {
-        return userCreated -> {
-            // The common way of retrieving a single user is by using the resource name
-            // Simply initialize the user in store when user is created, subsequent update
-            // of the user should be handled by separate processor
-            userCreated.peek(((key, value) -> System.out.printf("%s, %s", key, value))).mapValues(UserCreated::getUser)
-                    .groupByKey()
-                    .aggregate(() -> null, (aggKey, value, agg) -> value.toBuilder().setAggregateVersion(1).build(),
-                            Materialized.<String, User, KeyValueStore<Bytes, byte[]>>as("groupwallet.userservice.UserAggregate-store")
-                                    .withKeySerde(Serdes.String())
-                                    .withValueSerde(userSerde));
+    public BiFunction<KStream<String, User>, KStream<String, User>, KStream<String, User>> aggregateUser() {
+        return (userCreated, userUpdated) -> {
 
-            // When a user sign in with Firebase, the only information we get is the uid,
-            // so here materialize an Uid to user-name map to allow retrieving user by uid
-            userCreated.mapValues(UserCreated::getUser)
-                    .groupBy((key, value) -> value.getUid(), Grouped.with(Serdes.String(), userSerde))
-                    .aggregate(String::new, (aggKey, value, agg) -> value.getName(),
-                            Materialized.<String, String, KeyValueStore<Bytes, byte[]>>as("groupwallet.userservice.UidNameMap-store")
-                                    .withKeySerde(Serdes.String())
-                                    .withValueSerde(Serdes.String()));
+            var userCreatedEvent = userCreated.groupByKey();
+            var userUpdatedEvent = userUpdated.groupByKey();
+
+            return userCreatedEvent
+                    .cogroup(EventHandler::handleUserCreatedEvent)
+                    .cogroup(userUpdatedEvent, EventHandler::handleUserUpdatedEvent)
+                    .aggregate(() -> null,
+                        Materialized.<String, User, KeyValueStore<Bytes, byte[]>>as("groupwallet.userservice.UserAggregate-store")
+                                .withKeySerde(Serdes.String())
+                                .withValueSerde(userSerde))
+                    .toStream();
         };
+    }
+
+    private static class EventHandler {
+        // Simply update aggregate version and return the new user
+        public static User handleUserCreatedEvent(String key, User user, User init) {
+            return user.toBuilder().setAggregateVersion(1).build();
+        }
+
+        // UserUpdated event provide a full user object, simply increment aggregate version and return it
+        public static User handleUserUpdatedEvent(String key, User user, User init) {
+            return user.toBuilder().setAggregateVersion(init.getAggregateVersion() + 1).build();
+        }
     }
 }

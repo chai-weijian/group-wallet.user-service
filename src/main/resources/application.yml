@@ -8,14 +8,30 @@ spring.cloud.stream.bindings:
     destination: groupwallet.userservice.resetPreviouslySeenUserId
   createUser-out-0:
     destination: groupwallet.userservice.CreateUser-responses
-  initializeUser-in-0:
+  updateUser-in-0:
+    destination: groupwallet.userservice.UpdateUser-requests
+  updateUser-in-1:
+    destination: groupwallet.userservice.UserAggregate-stream
+  updateUser-out-0:
+    destination: groupwallet.userservice.UpdateUser-responses
+  aggregateUser-in-0:
+    destination: groupwallet.userservice.UserCreated-events
+  aggregateUser-in-1:
+    destination: groupwallet.userservice.UserUpdated-events
+  aggregateUser-out-0:
+    destination: groupwallet.userservice.UserAggregate-stream
+  mapUidToName-in-0:
     destination: groupwallet.userservice.UserCreated-events
 
 spring.cloud.stream.kafka.streams.binder.functions:
   createUser:
     application-id: groupwallet.userservice.createUser-app
-  initializeUser:
-    application-id: groupwallet.userservice.initializeUser-app
+  aggregateUser:
+    application-id: groupwallet.userservice.aggregateUser-app
+  mapUidToName:
+    application-id: groupwallet.userservice.mapUidToName-app
+  updateUser:
+    application-id: groupwallet.userservice.updateUser-app
 
 spring.cloud.stream.kafka.streams.binder:
   configuration:
@@ -25,7 +41,7 @@ spring.cloud.stream.kafka.streams.binder:
 spring:
   cloud:
     function:
-      definition: createUser;initializeUser
+      definition: createUser;aggregateUser;mapUidToName;updateUser
   kafka:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer

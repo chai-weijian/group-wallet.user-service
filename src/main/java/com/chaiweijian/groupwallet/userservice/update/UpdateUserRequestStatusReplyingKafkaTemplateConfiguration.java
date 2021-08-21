@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package com.chaiweijian.groupwallet.userservice.create;
+package com.chaiweijian.groupwallet.userservice.update;
 
-import com.chaiweijian.groupwallet.userservice.v1.CreateUserRequest;
+import com.chaiweijian.groupwallet.userservice.v1.UpdateUserRequest;
 import com.google.rpc.Status;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,22 +25,22 @@ import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
 import org.springframework.kafka.requestreply.ReplyingKafkaTemplate;
 
 @Configuration
-public class ReplyingKafkaTemplateConfiguration {
+public class UpdateUserRequestStatusReplyingKafkaTemplateConfiguration {
     private final ConsumerFactory<String, Status> consumerFactory;
 
-    public ReplyingKafkaTemplateConfiguration(ConsumerFactory<String, Status> consumerFactory) {
+    public UpdateUserRequestStatusReplyingKafkaTemplateConfiguration(ConsumerFactory<String, Status> consumerFactory) {
         this.consumerFactory = consumerFactory;
     }
 
     @Bean
-    public ReplyingKafkaTemplate<String, CreateUserRequest, Status> createUserRequestStatusReplyingKafkaTemplate(
-            ProducerFactory<String, CreateUserRequest> producerFactory,
+    public ReplyingKafkaTemplate<String, UpdateUserRequest, Status> updateUserRequestStatusReplyingKafkaTemplate(
+            ProducerFactory<String, UpdateUserRequest> producerFactory,
             ConcurrentKafkaListenerContainerFactory<String, Status> containerFactory
     ) {
         containerFactory.setConsumerFactory(consumerFactory);
         ConcurrentMessageListenerContainer<String, Status> repliesContainer =
-                containerFactory.createContainer("groupwallet.userservice.CreateUser-responses");
-        repliesContainer.getContainerProperties().setGroupId("groupwallet.userservice.CreateUserRequest-group");
+                containerFactory.createContainer("groupwallet.userservice.UpdateUser-responses");
+        repliesContainer.getContainerProperties().setGroupId("groupwallet.userservice.UpdateUserRequest-group");
         repliesContainer.setAutoStartup(false);
         return new ReplyingKafkaTemplate<>(producerFactory, repliesContainer);
     }

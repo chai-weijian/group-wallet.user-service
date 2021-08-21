@@ -14,8 +14,15 @@
 
 package com.chaiweijian.groupwallet.userservice.grpc.servers;
 
-import com.chaiweijian.groupwallet.userservice.v1.*;
+import com.chaiweijian.groupwallet.userservice.v1.UserAggregateServiceGrpc;
+import com.chaiweijian.groupwallet.userservice.v1.CreateUserRequest;
+import com.chaiweijian.groupwallet.userservice.v1.UpdateUserRequest;
+import com.chaiweijian.groupwallet.userservice.v1.User;
+import com.chaiweijian.groupwallet.userservice.v1.GetUserRequest;
+import com.chaiweijian.groupwallet.userservice.v1.FindUserRequest;
 import com.google.protobuf.Any;
+import com.google.protobuf.InvalidProtocolBufferException;
+import com.google.rpc.Code;
 import com.google.rpc.Status;
 import io.grpc.StatusException;
 import io.grpc.protobuf.StatusProto;
@@ -36,11 +43,15 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class UserAggregateServer extends UserAggregateServiceGrpc.UserAggregateServiceImplBase {
 
-    private final ReplyingKafkaTemplate<String, CreateUserRequest, Status> template;
+    private final ReplyingKafkaTemplate<String, CreateUserRequest, Status> createUserTemplate;
+    private final ReplyingKafkaTemplate<String, UpdateUserRequest, Status> updateUserTemplate;
     private final InteractiveQueryService interactiveQueryService;
 
-    public UserAggregateServer(ReplyingKafkaTemplate<String, CreateUserRequest, Status> template, InteractiveQueryService interactiveQueryService) {
-        this.template = template;
+    public UserAggregateServer(ReplyingKafkaTemplate<String, CreateUserRequest, Status> createUserTemplate,
+                               ReplyingKafkaTemplate<String, UpdateUserRequest, Status> updateUserTemplate,
+                               InteractiveQueryService interactiveQueryService) {
+        this.createUserTemplate = createUserTemplate;
+        this.updateUserTemplate = updateUserTemplate;
         this.interactiveQueryService = interactiveQueryService;
     }
 
@@ -51,18 +62,10 @@ public class UserAggregateServer extends UserAggregateServiceGrpc.UserAggregateS
                 request.getUser().getUid(),
                 request);
 
-        RequestReplyFuture<String, CreateUserRequest, Status> replyFuture = template.sendAndReceive(record);
+        RequestReplyFuture<String, CreateUserRequest, Status> replyFuture = createUserTemplate.sendAndReceive(record);
         try {
             ConsumerRecord<String, Status> consumerRecord = replyFuture.get(10, TimeUnit.SECONDS);
-
-            if (consumerRecord.value().getCode() == 0) {
-                // if the response is not error, the first detail will be the User created.
-                Any detail = consumerRecord.value().getDetails(0);
-                responseObserver.onNext(detail.unpack(User.class));
-                responseObserver.onCompleted();
-            } else {
-                responseObserver.onError(StatusProto.toStatusRuntimeException(consumerRecord.value()));
-            }
+            handleCreateUpdateResponse(consumerRecord, responseObserver);
         } catch (Exception exception) {
             log.error("UserAggregateServer - createUser Error", exception);
             responseObserver.onError(new StatusException(io.grpc.Status.INTERNAL.withCause(exception)));
@@ -71,36 +74,81 @@ public class UserAggregateServer extends UserAggregateServiceGrpc.UserAggregateS
 
     @Override
     public void getUser(GetUserRequest request, StreamObserver<User> responseObserver) {
-        var user = getUser(request.getName());
+        getUser(request.getName(), responseObserver);
+    }
+
+    @Override
+    public void findUser(FindUserRequest request, StreamObserver<User> responseObserver) {
+        final ReadOnlyKeyValueStore<String, String> userIdNameMapStore
+                = interactiveQueryService.getQueryableStore("groupwallet.userservice.UidNameMap-store", QueryableStoreTypes.keyValueStore());
+
+        var name = userIdNameMapStore.get(request.getUid());
+
+        if (name != null) {
+            getUser(name, responseObserver);
+        } else {
+            responseObserver.onError(StatusProto.toStatusRuntimeException(
+                    Status.newBuilder()
+                            .setCode(Code.NOT_FOUND_VALUE)
+                            .setMessage(String.format("Uid %s does not exists.", request.getUid()))
+                            .build()));
+        }
+    }
+
+    // get user from queryable store
+    private void getUser(String name, StreamObserver<User> responseObserver) {
+        if (!isValidUserNameFormat(name)) {
+            responseObserver.onError(StatusProto.toStatusRuntimeException(
+                    Status.newBuilder()
+                            .setCode(Code.INVALID_ARGUMENT_VALUE)
+                            .setMessage(String.format("%s is not a valid name format.", name))
+                            .build()));
+        }
+
+        final ReadOnlyKeyValueStore<String, User> userAggregateStore
+                = interactiveQueryService.getQueryableStore("groupwallet.userservice.UserAggregate-store", QueryableStoreTypes.keyValueStore());
+
+        var user = userAggregateStore.get(name);
+
         if (user != null) {
             responseObserver.onNext(user);
             responseObserver.onCompleted();
         } else {
             responseObserver.onError(StatusProto.toStatusRuntimeException(
                     Status.newBuilder()
-                            .setCode(5)
-                            .setMessage(String.format("%s does not exists.", request.getName()))
+                            .setCode(Code.NOT_FOUND_VALUE)
+                            .setMessage(String.format("%s does not exists.", name))
                             .build()));
         }
     }
 
     @Override
-    public void findUser(FindUserRequest request, StreamObserver<User> responseObserver) {
-        super.findUser(request, responseObserver);
+    public void updateUser(UpdateUserRequest request, StreamObserver<User> responseObserver) {
+        ProducerRecord<String, UpdateUserRequest> record = new ProducerRecord<>(
+                "groupwallet.userservice.UpdateUser-requests",
+                request.getUser().getName(),
+                request);
+
+        RequestReplyFuture<String, UpdateUserRequest, Status> replyFuture = updateUserTemplate.sendAndReceive(record);
+        try {
+            ConsumerRecord<String, Status> consumerRecord = replyFuture.get(10, TimeUnit.SECONDS);
+            handleCreateUpdateResponse(consumerRecord, responseObserver);
+        } catch (Exception exception) {
+            log.error("UserAggregateServer - updateUser Error", exception);
+            responseObserver.onError(new StatusException(io.grpc.Status.INTERNAL.withCause(exception)));
+        }
     }
 
-    // get user from queryable store
-    // if the name does not match any key, return null
-    private User getUser(String name) {
-        // if the name is invalid, pretty sure the user
-        // with invalid name is not exists in store
-        if (!isValidUserNameFormat(name)) {
-            return null;
+    private void handleCreateUpdateResponse(ConsumerRecord<String, Status> consumerRecord,
+                                            StreamObserver<User> responseObserver) throws InvalidProtocolBufferException {
+        if (consumerRecord.value().getCode() == Code.OK_VALUE) {
+            // if the response is not error, the first detail will be the User created/updated.
+            Any detail = consumerRecord.value().getDetails(0);
+            responseObserver.onNext(detail.unpack(User.class));
+            responseObserver.onCompleted();
+        } else {
+            responseObserver.onError(StatusProto.toStatusRuntimeException(consumerRecord.value()));
         }
-
-        final ReadOnlyKeyValueStore<String, User> userAggregateStore
-                = interactiveQueryService.getQueryableStore("groupwallet.userservice.UserAggregate-store", QueryableStoreTypes.keyValueStore());
-        return userAggregateStore.get(name);
     }
 
     // simple validation on name
