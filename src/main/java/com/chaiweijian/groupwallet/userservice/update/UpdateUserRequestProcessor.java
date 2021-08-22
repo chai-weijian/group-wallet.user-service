@@ -111,14 +111,18 @@ public class UpdateUserRequestProcessor {
                     .filterNot(((key, value) -> value.isFailed()));
 
             var updatedUser = simpleValidationPassed
-                    .mapValues(SimpleUserValidator::getUser);
+                    .mapValues(SimpleUserValidator::getUser)
+                    .mapValues(value -> value.toBuilder()
+                            .setAggregateVersion(value.getAggregateVersion() + 1)
+                            .setEtag(UserAggregateUtil.calculateEtag(value.getAggregateVersion() + 1))
+                            .build());
 
             updatedUser.to("groupwallet.userservice.UserUpdated-events", Produced.with(Serdes.String(), userSerde));
 
             var successStatus = updatedUser.mapValues(value -> Status.newBuilder()
                     .setCode(Code.OK_VALUE)
                     .setMessage("User successfully created.")
-                    .addDetails(Any.pack(value.toBuilder().setAggregateVersion(value.getAggregateVersion() + 1).setEtag(UserAggregateUtil.calculateEtag(value.getAggregateVersion() + 1)).build()))
+                    .addDetails(Any.pack(value))
                     .build());
 
             return userNotExistsErrorStatus

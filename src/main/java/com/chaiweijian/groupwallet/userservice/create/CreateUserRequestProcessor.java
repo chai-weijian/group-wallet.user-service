@@ -200,6 +200,8 @@ public class CreateUserRequestProcessor {
             var newUser = simpleValidationPassed
                     .mapValues(value -> value.getUser().toBuilder()
                             .setName(String.format("users/%s", value.getUserId()))
+                            .setAggregateVersion(1)
+                            .setEtag(UserAggregateUtil.calculateEtag(1))
                             .build());
 
             // dispatch user created event
@@ -212,7 +214,7 @@ public class CreateUserRequestProcessor {
             var successStatus = newUser.mapValues(value -> Status.newBuilder()
                     .setCode(Code.OK_VALUE)
                     .setMessage("User successfully created.")
-                    .addDetails(Any.pack(value.toBuilder().setAggregateVersion(1).setEtag(UserAggregateUtil.calculateEtag(1)).build()))
+                    .addDetails(Any.pack(value))
                     .build());
 
             // Merge all the possible outcomes of a create user request
