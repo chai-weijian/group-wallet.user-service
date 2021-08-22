@@ -15,18 +15,12 @@
 package com.chaiweijian.groupwallet.userservice.update;
 
 import com.chaiweijian.groupwallet.userservice.interfaces.SimpleValidator;
-import com.chaiweijian.groupwallet.userservice.util.BadRequestUtil;
-import com.chaiweijian.groupwallet.userservice.util.RequestValidation;
-import com.chaiweijian.groupwallet.userservice.util.SimpleUserFormatter;
-import com.chaiweijian.groupwallet.userservice.util.SimpleUserValidator;
+import com.chaiweijian.groupwallet.userservice.util.*;
 import com.chaiweijian.groupwallet.userservice.v1.UpdateUserRequest;
 import com.chaiweijian.groupwallet.userservice.v1.User;
 import com.google.protobuf.Any;
 import com.google.protobuf.util.FieldMaskUtil;
-import com.google.rpc.BadRequest;
-import com.google.rpc.Code;
-import com.google.rpc.ErrorInfo;
-import com.google.rpc.Status;
+import com.google.rpc.*;
 import io.confluent.kafka.streams.serdes.protobuf.KafkaProtobufSerde;
 import lombok.Data;
 import org.apache.kafka.common.serialization.Serdes;
@@ -66,28 +60,27 @@ public class UpdateUserRequestProcessor {
             var userExistsValidationPassed = userExistsValidation
                     .filter(((key, value) -> value.currentUserExists()));
 
-            var aggregateVersionValidation = userExistsValidationPassed
-                    .mapValues(value -> new RequestValidation<>(value, value.getRequest().getUser().getAggregateVersion() != value.getCurrentUser().getAggregateVersion()));
+            var etagValidation = userExistsValidationPassed
+                    .mapValues(value -> new RequestValidation<>(value, !value.getRequest().getUser().getEtag().equals(value.getCurrentUser().getEtag())));
 
-            var aggregateVersionErrorStatus = aggregateVersionValidation
+            var etagErrorStatus = etagValidation
                     .filter((key, value) -> value.isFailed())
                     .mapValues(RequestValidation::getRequest)
                     .mapValues(value -> Status.newBuilder()
                             .setCode(Code.ABORTED_VALUE)
                             .setMessage("Concurrency error.")
                             .addDetails(Any.pack(ErrorInfo.newBuilder()
-                                    .setReason("Aggregate version is not the latest.")
+                                    .setReason("Etag is not the latest version.")
                                     .setDomain("userservice.groupwallet.chaiweijian.com")
-                                    .putMetadata("providedAggregateVersion", String.valueOf(value.getRequest().getUser().getAggregateVersion()))
-                                    .putMetadata("latestAggregateVersion", String.valueOf(value.getCurrentUser().getAggregateVersion()))
+                                    .putMetadata("providedEtag", value.getRequest().getUser().getEtag())
                                     .build()))
                             .build());
 
-            var aggregateVersionValidationPassed = aggregateVersionValidation
+            var etagValidationPassed = etagValidation
                     .filterNot((key, value) -> value.isFailed())
                     .mapValues(RequestValidation::getRequest);
 
-            var fieldMaskValidation = aggregateVersionValidationPassed
+            var fieldMaskValidation = etagValidationPassed
                     .mapValues(FieldMaskValidator::validate);
 
             var fieldMaskErrorStatus = fieldMaskValidation
@@ -125,11 +118,11 @@ public class UpdateUserRequestProcessor {
             var successStatus = updatedUser.mapValues(value -> Status.newBuilder()
                     .setCode(Code.OK_VALUE)
                     .setMessage("User successfully created.")
-                    .addDetails(Any.pack(value.toBuilder().setAggregateVersion(value.getAggregateVersion() + 1).build()))
+                    .addDetails(Any.pack(value.toBuilder().setAggregateVersion(value.getAggregateVersion() + 1).setEtag(UserAggregateUtil.calculateEtag(value.getAggregateVersion() + 1)).build()))
                     .build());
 
             return userNotExistsErrorStatus
-                    .merge(aggregateVersionErrorStatus)
+                    .merge(etagErrorStatus)
                     .merge(fieldMaskErrorStatus)
                     .merge(simpleValidationErrorStatus)
                     .merge(successStatus);

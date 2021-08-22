@@ -14,6 +14,7 @@
 
 package com.chaiweijian.groupwallet.userservice.aggregate;
 
+import com.chaiweijian.groupwallet.userservice.util.UserAggregateUtil;
 import com.chaiweijian.groupwallet.userservice.v1.User;
 import io.confluent.kafka.streams.serdes.protobuf.KafkaProtobufSerde;
 import org.apache.kafka.common.serialization.Serdes;
@@ -56,14 +57,17 @@ public class UserAggregateProcessor {
     }
 
     private static class EventHandler {
+
         // Simply update aggregate version and return the new user
         public static User handleUserCreatedEvent(String key, User user, User init) {
-            return user.toBuilder().setAggregateVersion(1).build();
+            var aggregateVersion = 1;
+            return user.toBuilder().setAggregateVersion(aggregateVersion).setEtag(UserAggregateUtil.calculateEtag(aggregateVersion)).build();
         }
 
         // UserUpdated event provide a full user object, simply increment aggregate version and return it
         public static User handleUserUpdatedEvent(String key, User user, User init) {
-            return user.toBuilder().setAggregateVersion(init.getAggregateVersion() + 1).build();
+            var aggregateVersion = init.getAggregateVersion() + 1;
+            return user.toBuilder().setAggregateVersion(aggregateVersion).setEtag(UserAggregateUtil.calculateEtag(aggregateVersion)).build();
         }
     }
 }

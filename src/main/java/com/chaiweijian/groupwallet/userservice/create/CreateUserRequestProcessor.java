@@ -15,10 +15,7 @@
 package com.chaiweijian.groupwallet.userservice.create;
 
 import com.chaiweijian.groupwallet.userservice.interfaces.SimpleValidator;
-import com.chaiweijian.groupwallet.userservice.util.BadRequestUtil;
-import com.chaiweijian.groupwallet.userservice.util.RequestValidation;
-import com.chaiweijian.groupwallet.userservice.util.SimpleUserFormatter;
-import com.chaiweijian.groupwallet.userservice.util.SimpleUserValidator;
+import com.chaiweijian.groupwallet.userservice.util.*;
 import com.chaiweijian.groupwallet.userservice.v1.CreateUserRequest;
 import com.chaiweijian.groupwallet.userservice.v1.User;
 import com.google.protobuf.Any;
@@ -152,7 +149,7 @@ public class CreateUserRequestProcessor {
             // key: user id, value: Status with details on user id is taken
             var userIdTakenErrorStatus = userIdTakenValidationFailed
                     .mapValues(value -> Status.newBuilder()
-                            .setCode(6)
+                            .setCode(Code.ALREADY_EXISTS_VALUE)
                             .setMessage("User Id is taken.")
                             .addDetails(Any.pack(
                                     ErrorInfo.newBuilder()
@@ -215,7 +212,7 @@ public class CreateUserRequestProcessor {
             var successStatus = newUser.mapValues(value -> Status.newBuilder()
                     .setCode(Code.OK_VALUE)
                     .setMessage("User successfully created.")
-                    .addDetails(Any.pack(value.toBuilder().setAggregateVersion(1).build()))
+                    .addDetails(Any.pack(value.toBuilder().setAggregateVersion(1).setEtag(UserAggregateUtil.calculateEtag(1)).build()))
                     .build());
 
             // Merge all the possible outcomes of a create user request
