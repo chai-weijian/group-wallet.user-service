@@ -71,7 +71,7 @@ public class UpdateUserRequestProcessor {
                         return SimpleUserFormatter.format(result.build());
                     });
 
-            var simpleValidation = validateSimple(mergedUser);
+            var simpleValidation = UserStreamValidatorUtil.validateSimple(mergedUser);
 
             var updatedUser = simpleValidation.getPassedStream()
                     .mapValues(value -> value.toBuilder()
@@ -136,25 +136,6 @@ public class UpdateUserRequestProcessor {
         var passed = etagValidation
                 .filterNot((key, value) -> value.isFailed())
                 .mapValues(ValidationResult::getItem);
-
-        return new StreamValidationResult<>(passed, failed, status);
-    }
-
-    private StreamValidationResult<String, User> validateSimple(KStream<String, User> input) {
-        var validation = input
-                .mapValues((ValueMapper<User, SimpleUserValidator>) SimpleUserValidator::validate);
-
-        var failed = validation
-                .filter(((key, value) -> value.isFailed()))
-                .mapValues(SimpleUserValidator::getUser);
-
-        var status = validation
-                .filter(((key, value) -> value.isFailed()))
-                .mapValues(BadRequestUtil::packStatus);
-
-        var passed = validation
-                .filterNot(((key, value) -> value.isFailed()))
-                .mapValues(SimpleUserValidator::getUser);
 
         return new StreamValidationResult<>(passed, failed, status);
     }

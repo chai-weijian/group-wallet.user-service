@@ -73,9 +73,10 @@ public class CreateUserRequestProcessor {
 
             // Format the user before simple validation
             var formattedUser = duplicateUserIdValidationResult.getPassedStream()
-                    .mapValues(request -> request.toBuilder().setUser(SimpleUserFormatter.format(request.getUser())).build());
+                    .mapValues(request -> SimpleUserFormatter.format(
+                            request.getUser().toBuilder().setName(String.format("users/%s", request.getUserId())).build()));
 
-            var simpleValidationResult = validateSimple(formattedUser);
+            var simpleValidationResult = UserStreamValidatorUtil.validateSimple(formattedUser);
 
             // emit resetPreviouslySeenUid when user id validation and simple validation failed
             // the request has been repartitioned to user id so remap the key to uid
@@ -83,7 +84,7 @@ public class CreateUserRequestProcessor {
                     .selectKey((key, value) -> value.getUser().getUid())
                     .mapValues(value -> 0L);
             var resetSeenUidOnSimpleValidationFailed = simpleValidationResult.getFailedStream()
-                    .selectKey((key, value) -> value.getUser().getUid())
+                    .selectKey((key, value) -> value.getUid())
                     .mapValues(value -> 0L);
             resetSeenUidOnUserIdTakenValidationFailed.merge(resetSeenUidOnSimpleValidationFailed)
                     .repartition(Repartitioned.with(Serdes.String(), Serdes.Long()))
@@ -96,8 +97,7 @@ public class CreateUserRequestProcessor {
 
             // at this stage the request has passed all validation, create a new user now
             var newUser = simpleValidationResult.getPassedStream()
-                    .mapValues(value -> value.getUser().toBuilder()
-                            .setName(String.format("users/%s", value.getUserId()))
+                    .mapValues(value -> value.toBuilder()
                             .setAggregateVersion(1)
                             .setEtag(UserAggregateUtil.calculateEtag(1))
                             .build());
@@ -223,25 +223,6 @@ public class CreateUserRequestProcessor {
         var passed = validation
                 .filterNot(((key, value) -> value.isFailed()))
                 .mapValues(ValidationResult::getItem);
-
-        return new StreamValidationResult<>(passed, failed, status);
-    }
-
-    private StreamValidationResult<String, CreateUserRequest> validateSimple(KStream<String, CreateUserRequest> input) {
-        var validation = input
-                .mapValues(SimpleCreateUserRequestValidator::validate);
-
-        var failed = validation
-                .filter(((key, value) -> value.isFailed()))
-                .mapValues(SimpleCreateUserRequestValidator::getRequest);
-
-        var status = validation
-                .filter(((key, value) -> value.isFailed()))
-                .mapValues(BadRequestUtil::packStatus);
-
-        var passed = validation
-                .filterNot(((key, value) -> value.isFailed()))
-                .mapValues(SimpleCreateUserRequestValidator::getRequest);
 
         return new StreamValidationResult<>(passed, failed, status);
     }
