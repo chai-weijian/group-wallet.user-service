@@ -14,16 +14,13 @@
 
 package com.chaiweijian.groupwallet.userservice.util;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import com.google.protobuf.Any;
+import com.google.protobuf.Message;
+import com.google.rpc.Code;
+import com.google.rpc.Status;
 
-@Data
-@AllArgsConstructor
-public final class RequestValidation<T> {
-    private final T request;
-    // Use fail instead of pass, since validation
-    // usually check against some precondition
-    // is not met, rather than check against all
-    // precondition met
-    private final boolean failed;
+public class OkStatusUtil {
+    public static <T extends Message> Status packStatus(T t, String message) {
+        return Status.newBuilder().setCode(Code.OK_VALUE).setMessage(message).addDetails(Any.pack(t)).build();
+    }
 }

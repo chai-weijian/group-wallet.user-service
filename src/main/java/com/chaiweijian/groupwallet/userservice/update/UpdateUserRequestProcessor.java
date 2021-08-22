@@ -14,13 +14,16 @@
 
 package com.chaiweijian.groupwallet.userservice.update;
 
-import com.chaiweijian.groupwallet.userservice.interfaces.SimpleValidator;
 import com.chaiweijian.groupwallet.userservice.util.*;
 import com.chaiweijian.groupwallet.userservice.v1.UpdateUserRequest;
 import com.chaiweijian.groupwallet.userservice.v1.User;
 import com.google.protobuf.Any;
+import com.google.protobuf.FieldMask;
 import com.google.protobuf.util.FieldMaskUtil;
-import com.google.rpc.*;
+import com.google.rpc.BadRequest;
+import com.google.rpc.Code;
+import com.google.rpc.ErrorInfo;
+import com.google.rpc.Status;
 import io.confluent.kafka.streams.serdes.protobuf.KafkaProtobufSerde;
 import lombok.Data;
 import org.apache.kafka.common.serialization.Serdes;
@@ -45,73 +48,32 @@ public class UpdateUserRequestProcessor {
     public BiFunction<KStream<String, UpdateUserRequest>, GlobalKTable<String, User>, KStream<String, Status>> updateUser() {
         return (updateUserRequest, userAggregateStore) -> {
 
-            var userExistsValidation = updateUserRequest
+            var userExistsValidationResult = validateUserExists(updateUserRequest, userAggregateStore);
+
+            var updateRequestAndExistingUser = userExistsValidationResult.getPassedStream()
                     .leftJoin(userAggregateStore,
                             (leftKey, leftValue) -> leftKey,
                             UpdateRequestAndExistingUser::new);
 
-            var userNotExistsErrorStatus = userExistsValidation
-                    .filterNot((key, value) -> value.currentUserExists())
-                    .mapValues(value -> Status.newBuilder()
-                            .setCode(Code.NOT_FOUND_VALUE)
-                            .setMessage(String.format("User with name %s does not exists.", value.getRequest().getUser().getName()))
-                            .build());
+            var etagValidationResult = validateEtag(updateRequestAndExistingUser);
 
-            var userExistsValidationPassed = userExistsValidation
-                    .filter(((key, value) -> value.currentUserExists()));
+            var updatedFieldMask = etagValidationResult.getPassedStream()
+                    .mapValues(value -> new UpdateRequestAndExistingUser(
+                            value.getRequest().toBuilder().setUpdateMask(removeImmutableField(value.getRequest().getUpdateMask())).build(),
+                            value.getCurrentUser()));
 
-            var etagValidation = userExistsValidationPassed
-                    .mapValues(value -> new RequestValidation<>(value, !value.getRequest().getUser().getEtag().equals(value.getCurrentUser().getEtag())));
+            var fieldMaskValidationResult = validateFieldMask(updatedFieldMask);
 
-            var etagErrorStatus = etagValidation
-                    .filter((key, value) -> value.isFailed())
-                    .mapValues(RequestValidation::getRequest)
-                    .mapValues(value -> Status.newBuilder()
-                            .setCode(Code.ABORTED_VALUE)
-                            .setMessage("Concurrency error.")
-                            .addDetails(Any.pack(ErrorInfo.newBuilder()
-                                    .setReason("Etag is not the latest version.")
-                                    .setDomain("userservice.groupwallet.chaiweijian.com")
-                                    .putMetadata("providedEtag", value.getRequest().getUser().getEtag())
-                                    .build()))
-                            .build());
-
-            var etagValidationPassed = etagValidation
-                    .filterNot((key, value) -> value.isFailed())
-                    .mapValues(RequestValidation::getRequest);
-
-            var fieldMaskValidation = etagValidationPassed
-                    .mapValues(FieldMaskValidator::validate);
-
-            var fieldMaskErrorStatus = fieldMaskValidation
-                    .filter(((key, value) -> value.isFailed()))
-                    .mapValues(BadRequestUtil::packStatus);
-
-            var fieldMaskPassed = fieldMaskValidation
-                    .filterNot(((key, value) -> value.isFailed()))
-                    .mapValues(FieldMaskValidator::getRequestAndExistingUser);
-
-            var mergedUser = fieldMaskPassed
+            var mergedUser = fieldMaskValidationResult.getPassedStream()
                     .mapValues(value -> {
                         var result = value.getCurrentUser().toBuilder();
                         FieldMaskUtil.merge(value.getRequest().getUpdateMask(), value.getRequest().getUser(), result);
                         return SimpleUserFormatter.format(result.build());
                     });
 
-            var simpleValidation = mergedUser
-                    .mapValues((ValueMapper<User, SimpleUserValidator>) SimpleUserValidator::validate);
+            var simpleValidation = validateSimple(mergedUser);
 
-            var simpleValidationFailed = simpleValidation
-                    .filter(((key, value) -> value.isFailed()));
-
-            var simpleValidationErrorStatus = simpleValidationFailed
-                    .mapValues(BadRequestUtil::packStatus);
-
-            var simpleValidationPassed = simpleValidation
-                    .filterNot(((key, value) -> value.isFailed()));
-
-            var updatedUser = simpleValidationPassed
-                    .mapValues(SimpleUserValidator::getUser)
+            var updatedUser = simpleValidation.getPassedStream()
                     .mapValues(value -> value.toBuilder()
                             .setAggregateVersion(value.getAggregateVersion() + 1)
                             .setEtag(UserAggregateUtil.calculateEtag(value.getAggregateVersion() + 1))
@@ -119,53 +81,121 @@ public class UpdateUserRequestProcessor {
 
             updatedUser.to("groupwallet.userservice.UserUpdated-events", Produced.with(Serdes.String(), userSerde));
 
-            var successStatus = updatedUser.mapValues(value -> Status.newBuilder()
-                    .setCode(Code.OK_VALUE)
-                    .setMessage("User successfully created.")
-                    .addDetails(Any.pack(value))
-                    .build());
+            var successStatus = updatedUser.mapValues(value -> OkStatusUtil.packStatus(value, "User updated."));
 
-            return userNotExistsErrorStatus
-                    .merge(etagErrorStatus)
-                    .merge(fieldMaskErrorStatus)
-                    .merge(simpleValidationErrorStatus)
+            return userExistsValidationResult.getStatusStream()
+                    .merge(etagValidationResult.getStatusStream())
+                    .merge(fieldMaskValidationResult.getStatusStream())
+                    .merge(simpleValidation.getStatusStream())
                     .merge(successStatus);
         };
     }
 
-    @Data
-    private static class FieldMaskValidator implements SimpleValidator {
-        private final UpdateRequestAndExistingUser requestAndExistingUser;
-        private final BadRequest badRequest;
-        private final boolean failed;
+    private StreamValidationResult<String, UpdateUserRequest> validateUserExists(KStream<String, UpdateUserRequest> input, GlobalKTable<String, User> userAggregateStore) {
+        var validation = input
+                .leftJoin(userAggregateStore,
+                        (leftKey, leftValue) -> leftKey,
+                        UpdateRequestAndExistingUser::new);
 
-        public static FieldMaskValidator validate(UpdateRequestAndExistingUser requestAndExistingUser) {
-            var badRequest = BadRequest.newBuilder();
+        var failed = validation
+                .filterNot((key, value) -> value.currentUserExists())
+                .mapValues(UpdateRequestAndExistingUser::getRequest);
 
-            validateFieldMask(badRequest, requestAndExistingUser);
-            validateImmutableFieldMask(badRequest, requestAndExistingUser);
+        var status = failed
+                .mapValues(value -> Status.newBuilder()
+                        .setCode(Code.NOT_FOUND_VALUE)
+                        .setMessage(String.format("User with name %s does not exists.", value.getUser().getName()))
+                        .build());
 
-            return new FieldMaskValidator(requestAndExistingUser, badRequest.build(), badRequest.getFieldViolationsCount() > 0);
-        }
+        var passed = validation
+                .filter(((key, value) -> value.currentUserExists()))
+                .mapValues(UpdateRequestAndExistingUser::getRequest);
 
-        private static void validateFieldMask(BadRequest.Builder builder, UpdateRequestAndExistingUser requestAndExistingUser) {
-            if (!FieldMaskUtil.isValid(User.class, requestAndExistingUser.getRequest().getUpdateMask())) {
-                builder.addFieldViolations(BadRequest.FieldViolation.newBuilder().setField("update_mask").setDescription("Unable to map update_mask to User type.").build());
-            }
-        }
+        return new StreamValidationResult<>(passed, failed, status);
+    }
 
-        private static void validateImmutableFieldMask(BadRequest.Builder builder, UpdateRequestAndExistingUser requestAndExistingUser) {
-            if (requestAndExistingUser.getRequest().getUpdateMask().getPathsList().contains("uid")) {
-                builder.addFieldViolations(BadRequest.FieldViolation.newBuilder().setField("update_mask").setDescription("Uid cannot be changed.").build());
-            }
-            if (requestAndExistingUser.getRequest().getUpdateMask().getPathsList().contains("name")) {
-                builder.addFieldViolations(BadRequest.FieldViolation.newBuilder().setField("update_mask").setDescription("Name cannot be changed.").build());
-            }
-        }
+    private StreamValidationResult<String, UpdateRequestAndExistingUser> validateEtag(KStream<String, UpdateRequestAndExistingUser> input) {
+        var etagValidation = input
+                .mapValues(value -> new ValidationResult<>(value).setPass(value.getRequest().getUser().getEtag().equals(value.getCurrentUser().getEtag())));
+
+        var failed = etagValidation
+                .filter((key, value) -> value.isFailed())
+                .mapValues(ValidationResult::getItem);
+
+        var status = failed
+                .mapValues(value -> Status.newBuilder()
+                        .setCode(Code.ABORTED_VALUE)
+                        .setMessage("Concurrency error.")
+                        .addDetails(Any.pack(ErrorInfo.newBuilder()
+                                .setReason("Etag is not the latest version.")
+                                .setDomain("userservice.groupwallet.chaiweijian.com")
+                                .putMetadata("providedEtag", value.getRequest().getUser().getEtag())
+                                .build()))
+                        .build());
+
+        var passed = etagValidation
+                .filterNot((key, value) -> value.isFailed())
+                .mapValues(ValidationResult::getItem);
+
+        return new StreamValidationResult<>(passed, failed, status);
+    }
+
+    private StreamValidationResult<String, User> validateSimple(KStream<String, User> input) {
+        var validation = input
+                .mapValues((ValueMapper<User, SimpleUserValidator>) SimpleUserValidator::validate);
+
+        var failed = validation
+                .filter(((key, value) -> value.isFailed()))
+                .mapValues(SimpleUserValidator::getUser);
+
+        var status = validation
+                .filter(((key, value) -> value.isFailed()))
+                .mapValues(BadRequestUtil::packStatus);
+
+        var passed = validation
+                .filterNot(((key, value) -> value.isFailed()))
+                .mapValues(SimpleUserValidator::getUser);
+
+        return new StreamValidationResult<>(passed, failed, status);
+    }
+
+    private static FieldMask removeImmutableField(FieldMask fieldMask) {
+        final FieldMask OUTPUT_ONLY = FieldMask.newBuilder()
+                .addPaths("uid")
+                .addPaths("name")
+                .addPaths("aggregate_version")
+                .addPaths("etag")
+                .build();
+
+        return FieldMaskUtil.subtract(fieldMask, OUTPUT_ONLY);
+    }
+
+    private static StreamValidationResult<String, UpdateRequestAndExistingUser> validateFieldMask(KStream<String, UpdateRequestAndExistingUser> input) {
+        var validation = input
+                .mapValues(value -> new ValidationResult<>(value).setPass(FieldMaskUtil.isValid(User.class, value.getRequest().getUpdateMask())));
+
+        var failed = validation
+                .filter(((key, value) -> value.isFailed()))
+                .mapValues(ValidationResult::getItem);
+
+        var status = validation
+                .filter(((key, value) -> value.isFailed()))
+                .mapValues(value -> BadRequest.newBuilder()
+                        .addFieldViolations(BadRequest.FieldViolation.newBuilder()
+                                .setField("update_mask")
+                                .setDescription("Unable to map update_mask to User type."))
+                        .build())
+                .mapValues(BadRequestUtil::packStatus);
+
+        var passed = validation
+                .filterNot(((key, value) -> value.isFailed()))
+                .mapValues(ValidationResult::getItem);
+
+        return new StreamValidationResult<>(passed, failed, status);
     }
 
     @Data
-    private static class UpdateRequestAndExistingUser {
+    public static class UpdateRequestAndExistingUser {
         private final UpdateUserRequest request;
         private final User currentUser;
 

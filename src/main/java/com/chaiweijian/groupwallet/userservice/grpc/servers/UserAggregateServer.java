@@ -142,7 +142,7 @@ public class UserAggregateServer extends UserAggregateServiceGrpc.UserAggregateS
     private void handleCreateUpdateResponse(ConsumerRecord<String, Status> consumerRecord,
                                             StreamObserver<User> responseObserver) throws InvalidProtocolBufferException {
         if (consumerRecord.value().getCode() == Code.OK_VALUE) {
-            // if the response is not error, the first detail will be the User created/updated.
+            // if the response is not error, the first detail will be the user created/updated.
             Any detail = consumerRecord.value().getDetails(0);
             responseObserver.onNext(detail.unpack(User.class));
             responseObserver.onCompleted();
