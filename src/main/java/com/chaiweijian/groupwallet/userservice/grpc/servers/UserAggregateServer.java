@@ -14,12 +14,12 @@
 
 package com.chaiweijian.groupwallet.userservice.grpc.servers;
 
-import com.chaiweijian.groupwallet.userservice.v1.UserAggregateServiceGrpc;
 import com.chaiweijian.groupwallet.userservice.v1.CreateUserRequest;
+import com.chaiweijian.groupwallet.userservice.v1.FindUserRequest;
+import com.chaiweijian.groupwallet.userservice.v1.GetUserRequest;
 import com.chaiweijian.groupwallet.userservice.v1.UpdateUserRequest;
 import com.chaiweijian.groupwallet.userservice.v1.User;
-import com.chaiweijian.groupwallet.userservice.v1.GetUserRequest;
-import com.chaiweijian.groupwallet.userservice.v1.FindUserRequest;
+import com.chaiweijian.groupwallet.userservice.v1.UserAggregateServiceGrpc;
 import com.google.protobuf.Any;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.rpc.Code;
@@ -65,7 +65,7 @@ public class UserAggregateServer extends UserAggregateServiceGrpc.UserAggregateS
         RequestReplyFuture<String, CreateUserRequest, Status> replyFuture = createUserTemplate.sendAndReceive(record);
         try {
             ConsumerRecord<String, Status> consumerRecord = replyFuture.get(10, TimeUnit.SECONDS);
-            handleCreateUpdateResponse(consumerRecord, responseObserver);
+            handleResponse(consumerRecord, responseObserver);
         } catch (Exception exception) {
             log.error("UserAggregateServer - createUser Error", exception);
             responseObserver.onError(new StatusException(io.grpc.Status.INTERNAL.withCause(exception)));
@@ -132,15 +132,15 @@ public class UserAggregateServer extends UserAggregateServiceGrpc.UserAggregateS
         RequestReplyFuture<String, UpdateUserRequest, Status> replyFuture = updateUserTemplate.sendAndReceive(record);
         try {
             ConsumerRecord<String, Status> consumerRecord = replyFuture.get(10, TimeUnit.SECONDS);
-            handleCreateUpdateResponse(consumerRecord, responseObserver);
+            handleResponse(consumerRecord, responseObserver);
         } catch (Exception exception) {
             log.error("UserAggregateServer - updateUser Error", exception);
             responseObserver.onError(new StatusException(io.grpc.Status.INTERNAL.withCause(exception)));
         }
     }
 
-    private void handleCreateUpdateResponse(ConsumerRecord<String, Status> consumerRecord,
-                                            StreamObserver<User> responseObserver) throws InvalidProtocolBufferException {
+    private void handleResponse(ConsumerRecord<String, Status> consumerRecord,
+                                StreamObserver<User> responseObserver) throws InvalidProtocolBufferException {
         if (consumerRecord.value().getCode() == Code.OK_VALUE) {
             // if the response is not error, the first detail will be the user created/updated.
             Any detail = consumerRecord.value().getDetails(0);

@@ -14,7 +14,13 @@
 
 package com.chaiweijian.groupwallet.userservice.update;
 
-import com.chaiweijian.groupwallet.userservice.util.*;
+import com.chaiweijian.groupwallet.userservice.util.BadRequestUtil;
+import com.chaiweijian.groupwallet.userservice.util.OkStatusUtil;
+import com.chaiweijian.groupwallet.userservice.util.SimpleUserFormatter;
+import com.chaiweijian.groupwallet.userservice.util.StreamValidationResult;
+import com.chaiweijian.groupwallet.userservice.util.UserAggregateUtil;
+import com.chaiweijian.groupwallet.userservice.util.UserStreamValidatorUtil;
+import com.chaiweijian.groupwallet.userservice.util.ValidationResult;
 import com.chaiweijian.groupwallet.userservice.v1.UpdateUserRequest;
 import com.chaiweijian.groupwallet.userservice.v1.User;
 import com.google.protobuf.Any;
@@ -30,7 +36,6 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.kstream.GlobalKTable;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Produced;
-import org.apache.kafka.streams.kstream.ValueMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Component;
 
