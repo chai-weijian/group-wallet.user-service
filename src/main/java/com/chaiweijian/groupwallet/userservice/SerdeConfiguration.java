@@ -14,7 +14,10 @@
 
 package com.chaiweijian.groupwallet.userservice;
 
+import com.chaiweijian.groupwallet.groupservice.v1.Group;
+import com.chaiweijian.groupwallet.userservice.v1.CreateGroupInvitationRequest;
 import com.chaiweijian.groupwallet.userservice.v1.CreateUserRequest;
+import com.chaiweijian.groupwallet.userservice.v1.GroupInvitation;
 import com.chaiweijian.groupwallet.userservice.v1.UpdateUserRequest;
 import com.chaiweijian.groupwallet.userservice.v1.User;
 import com.google.rpc.Status;
@@ -48,6 +51,27 @@ public class SerdeConfiguration {
     public KafkaProtobufSerde<User> userKafkaProtobufSerde() {
         final KafkaProtobufSerde<User> protobufSerde = new KafkaProtobufSerde<>();
         protobufSerde.configure(getSerdeConfig(User.class.getCanonicalName()), false);
+        return protobufSerde;
+    }
+
+    @Bean
+    public KafkaProtobufSerde<Group> groupKafkaProtobufSerde() {
+        final KafkaProtobufSerde<Group> protobufSerde = new KafkaProtobufSerde<>();
+        protobufSerde.configure(getSerdeConfig(Group.class.getCanonicalName()), false);
+        return protobufSerde;
+    }
+
+    @Bean
+    public KafkaProtobufSerde<GroupInvitation> groupInvitationKafkaProtobufSerde() {
+        final KafkaProtobufSerde<GroupInvitation> protobufSerde = new KafkaProtobufSerde<>();
+        protobufSerde.configure(getSerdeConfig(GroupInvitation.class.getCanonicalName()), false);
+        return protobufSerde;
+    }
+
+    @Bean
+    public KafkaProtobufSerde<CreateGroupInvitationRequest> createGroupInvitationRequestKafkaProtobufSerde() {
+        final KafkaProtobufSerde<CreateGroupInvitationRequest> protobufSerde = new KafkaProtobufSerde<>();
+        protobufSerde.configure(getSerdeConfig(CreateGroupInvitationRequest.class.getCanonicalName()), false);
         return protobufSerde;
     }
 

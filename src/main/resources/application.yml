@@ -23,6 +23,15 @@ spring.cloud.stream.bindings:
   mapUidToName-in-0:
     destination: groupwallet.userservice.UserCreated-events
 
+  createGroupInvitation-in-0:
+    destination: groupwallet.userservice.CreateGroupInvitation-requests
+  createGroupInvitation-in-1:
+    destination: groupwallet.userservice.UserAggregate-stream
+  createGroupInvitation-in-2:
+    destination: groupwallet.groupservice.GroupAggregate-stream
+  createGroupInvitation-out-0:
+    destination: groupwallet.userservice.CreateGroupInvitation-responses
+
 spring.cloud.stream.kafka.streams.binder.functions:
   createUser:
     application-id: groupwallet.userservice.createUser-app
@@ -32,6 +41,8 @@ spring.cloud.stream.kafka.streams.binder.functions:
     application-id: groupwallet.userservice.mapUidToName-app
   updateUser:
     application-id: groupwallet.userservice.updateUser-app
+  createGroupInvitation:
+    application-id: groupwallet.userservice.createGroupInvitation-app
 
 spring.cloud.stream.kafka.streams.binder:
   configuration:
@@ -41,7 +52,7 @@ spring.cloud.stream.kafka.streams.binder:
 spring:
   cloud:
     function:
-      definition: createUser;aggregateUser;mapUidToName;updateUser
+      definition: createUser;aggregateUser;mapUidToName;updateUser;createGroupInvitation
   kafka:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
