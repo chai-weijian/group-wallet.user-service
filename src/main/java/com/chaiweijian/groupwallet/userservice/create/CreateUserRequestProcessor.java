@@ -111,7 +111,7 @@ public class CreateUserRequestProcessor {
             var newUser = simpleValidationResult.getPassedStream()
                     .mapValues(value -> value.toBuilder()
                             .setAggregateVersion(1)
-                            .setEtag(UserAggregateUtil.calculateEtag(1))
+                            .setEtag(UserAggregateUtil.calculateEtag(value.getName(), 1))
                             .build());
 
             // dispatch user created event

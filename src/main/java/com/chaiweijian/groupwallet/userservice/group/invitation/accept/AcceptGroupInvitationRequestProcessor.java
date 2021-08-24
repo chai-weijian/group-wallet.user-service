@@ -70,7 +70,7 @@ public class AcceptGroupInvitationRequestProcessor {
                     .mapValues(value -> value.toBuilder()
                             .setUpdateTime(fromMillis(currentTimeMillis()))
                             .setAggregateVersion(value.getAggregateVersion() + 1)
-                            .setEtag(GroupInvitationUtil.calculateEtag(value.getAggregateVersion() + 1))
+                            .setEtag(GroupInvitationUtil.calculateEtag(value.getName(), value.getAggregateVersion() + 1))
                             .setState(GroupInvitation.State.ACCEPTED)
                             .build());
 

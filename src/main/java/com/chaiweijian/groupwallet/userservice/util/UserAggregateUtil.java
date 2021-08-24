@@ -15,11 +15,11 @@
 package com.chaiweijian.groupwallet.userservice.util;
 
 public class UserAggregateUtil {
-    public static String calculateEtag(Integer aggregateVersion) {
+    public static String calculateEtag(String name, Integer aggregateVersion) {
         // Fixed string to append to aggregate version before calculating etag.
         // This is to prevent client from guessing the next etag.
         final String etagSecret = "eb659ae2";
 
-        return EtagUtil.calculateEtag(etagSecret, aggregateVersion);
+        return EtagUtil.calculateEtag(etagSecret, name, aggregateVersion);
     }
 }

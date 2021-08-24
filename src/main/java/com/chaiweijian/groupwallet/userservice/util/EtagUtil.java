@@ -23,12 +23,13 @@ public class EtagUtil {
      * Returns an etag based on provided etagSecret and aggregateVersion.
      *
      * @param   etagSecret  Fixed string to append to aggregate version before calculating etag. This is to prevent client from guessing the next etag.
+     * @param   resourceName  The resource to generate etag
      * @param   aggregateVersion    The aggregate version of object to calculate etag
      * @return  an opaque string that is unique for each aggregate version
      */
-    public static String calculateEtag(String etagSecret, Integer aggregateVersion) {
+    public static String calculateEtag(String etagSecret, String resourceName, Integer aggregateVersion) {
         //noinspection UnstableApiUsage
-        var calculated = Hashing.sha256().hashString(String.format("%s-%d", etagSecret, aggregateVersion), StandardCharsets.UTF_8).toString();
+        var calculated = Hashing.sha256().hashString(String.format("%s-%s-%d", etagSecret, resourceName, aggregateVersion), StandardCharsets.UTF_8).toString();
 
         // ETag values should include quotes as described in [RFC 7232](https://datatracker.ietf.org/doc/html/rfc7232#section-2.3).
         // For example, a valid etag is "foo", not foo.

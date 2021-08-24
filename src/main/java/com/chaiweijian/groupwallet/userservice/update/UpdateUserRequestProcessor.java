@@ -81,7 +81,7 @@ public class UpdateUserRequestProcessor {
             var updatedUser = simpleValidation.getPassedStream()
                     .mapValues(value -> value.toBuilder()
                             .setAggregateVersion(value.getAggregateVersion() + 1)
-                            .setEtag(UserAggregateUtil.calculateEtag(value.getAggregateVersion() + 1))
+                            .setEtag(UserAggregateUtil.calculateEtag(value.getName(), value.getAggregateVersion() + 1))
                             .build());
 
             updatedUser.to("groupwallet.userservice.UserUpdated-events", Produced.with(Serdes.String(), userSerde));

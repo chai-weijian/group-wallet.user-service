@@ -61,13 +61,13 @@ public class UserAggregateProcessor {
         // Simply update aggregate version and return the new user
         public static User handleUserCreatedEvent(String key, User user, User init) {
             var aggregateVersion = 1;
-            return user.toBuilder().setAggregateVersion(aggregateVersion).setEtag(UserAggregateUtil.calculateEtag(aggregateVersion)).build();
+            return user.toBuilder().setAggregateVersion(aggregateVersion).setEtag(UserAggregateUtil.calculateEtag(user.getName(), aggregateVersion)).build();
         }
 
         // UserUpdated event provide a full user object, simply increment aggregate version and return it
         public static User handleUserUpdatedEvent(String key, User user, User init) {
             var aggregateVersion = init.getAggregateVersion() + 1;
-            return user.toBuilder().setAggregateVersion(aggregateVersion).setEtag(UserAggregateUtil.calculateEtag(aggregateVersion)).build();
+            return user.toBuilder().setAggregateVersion(aggregateVersion).setEtag(UserAggregateUtil.calculateEtag(user.getName(), aggregateVersion)).build();
         }
     }
 }

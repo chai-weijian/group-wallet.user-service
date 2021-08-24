@@ -60,7 +60,7 @@ public class GroupInvitationAggregateProcessor {
             var aggregateVersion = 1;
             return groupInvitation.toBuilder()
                     .setAggregateVersion(aggregateVersion)
-                    .setEtag(GroupInvitationUtil.calculateEtag(aggregateVersion))
+                    .setEtag(GroupInvitationUtil.calculateEtag(groupInvitation.getName(), aggregateVersion))
                     .build();
         }
 
@@ -68,7 +68,7 @@ public class GroupInvitationAggregateProcessor {
             var aggregateVersion = init.getAggregateVersion() + 1;
             return groupInvitation.toBuilder()
                     .setAggregateVersion(aggregateVersion)
-                    .setEtag(GroupInvitationUtil.calculateEtag(aggregateVersion))
+                    .setEtag(GroupInvitationUtil.calculateEtag(groupInvitation.getName(), aggregateVersion))
                     .build();
         }
 
@@ -76,7 +76,7 @@ public class GroupInvitationAggregateProcessor {
             var aggregateVersion = init.getAggregateVersion() + 1;
             return groupInvitation.toBuilder()
                     .setAggregateVersion(aggregateVersion)
-                    .setEtag(GroupInvitationUtil.calculateEtag(aggregateVersion))
+                    .setEtag(GroupInvitationUtil.calculateEtag(groupInvitation.getName(), aggregateVersion))
                     .build();
         }
     }

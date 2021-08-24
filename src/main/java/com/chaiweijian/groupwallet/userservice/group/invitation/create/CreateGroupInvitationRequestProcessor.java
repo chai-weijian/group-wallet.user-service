@@ -60,7 +60,7 @@ public class CreateGroupInvitationRequestProcessor {
                     .mapValues(value -> value.getGroupInvitation().toBuilder()
                             .setName(String.format("%s/groupInvitations/%s", value.getParent(), UUID.randomUUID()))
                             .setAggregateVersion(1)
-                            .setEtag(GroupInvitationUtil.calculateEtag(1))
+                            .setEtag(GroupInvitationUtil.calculateEtag(value.getGroupInvitation().getName(), 1))
                             .setState(GroupInvitation.State.PENDING)
                             .setCreateTime(fromMillis(currentTimeMillis()))
                             .build());
