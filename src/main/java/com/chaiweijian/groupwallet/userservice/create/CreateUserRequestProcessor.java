@@ -69,7 +69,9 @@ public class CreateUserRequestProcessor {
                     .selectKey((key, value) -> value.getUserId())
                     .repartition(Repartitioned.with(Serdes.String(), createUserRequestSerde));
 
-            var duplicateUserIdValidationResult = validateDuplicateUserId(partitionByUserId, resetUserIdTrackerStream);
+            var userIdValidation = validateUserId(partitionByUserId);
+
+            var duplicateUserIdValidationResult = validateDuplicateUserId(userIdValidation.getPassedStream(), resetUserIdTrackerStream);
 
             // Format the user before simple validation
             var formattedUser = duplicateUserIdValidationResult.getPassedStream()
@@ -78,9 +80,13 @@ public class CreateUserRequestProcessor {
 
             var simpleValidationResult = UserStreamValidatorUtil.validateSimple(formattedUser);
 
-            // emit resetPreviouslySeenUid when user id validation and simple validation failed
+            // emit resetPreviouslySeenUid when:
+            // - user id simple validation failed
+            // - user id taken validation failed
+            // - user simple validation failed
             // the request has been repartitioned to user id so remap the key to uid
             var resetSeenUidOnUserIdTakenValidationFailed = duplicateUserIdValidationResult.getFailedStream()
+                    .merge(userIdValidation.getFailedStream())
                     .selectKey((key, value) -> value.getUser().getUid())
                     .mapValues(value -> 0L);
             var resetSeenUidOnSimpleValidationFailed = simpleValidationResult.getFailedStream()
@@ -113,6 +119,7 @@ public class CreateUserRequestProcessor {
 
             // Merge all the possible outcomes of a create user request
             return duplicateUidValidationResult.getStatusStream()
+                    .merge(userIdValidation.getStatusStream())
                     .merge(duplicateUserIdValidationResult.getStatusStream())
                     .merge(simpleValidationResult.getStatusStream())
                     .merge(successStatus);
@@ -174,6 +181,25 @@ public class CreateUserRequestProcessor {
         return new StreamValidationResult<>(passed, failed, status);
     }
 
+    public static StreamValidationResult<String, CreateUserRequest> validateUserId(KStream<String, CreateUserRequest> input) {
+        var validation = input
+                .mapValues(SimpleUserIdValidator::validate);
+
+        var failed = validation
+                .filter(((key, value) -> value.isFailed()))
+                .mapValues(SimpleUserIdValidator::getRequest);
+
+        var status = validation
+                .filter(((key, value) -> value.isFailed()))
+                .mapValues(BadRequestUtil::packStatus);
+
+        var passed = validation
+                .filterNot(((key, value) -> value.isFailed()))
+                .mapValues(SimpleUserIdValidator::getRequest);
+
+        return new StreamValidationResult<>(passed, failed, status);
+    }
+
     private StreamValidationResult<String, CreateUserRequest> validateDuplicateUserId(KStream<String, CreateUserRequest> input, KStream<String, Long> resetUserIdTrackerStream) {
         // keep track of seen user id to detect duplicate user id
         // key: user id, value: count of previously seen uid
@@ -228,18 +254,17 @@ public class CreateUserRequestProcessor {
     }
 
     @Data
-    private static class SimpleCreateUserRequestValidator implements SimpleValidator {
+    private static class SimpleUserIdValidator implements SimpleValidator {
         private final CreateUserRequest request;
         private final BadRequest badRequest;
         private final boolean failed;
 
-        public static SimpleCreateUserRequestValidator validate(CreateUserRequest createUserRequest) {
+        public static SimpleUserIdValidator validate(CreateUserRequest createUserRequest) {
             var builder = BadRequest.newBuilder();
 
             validateUserId(builder, createUserRequest.getUserId());
-            SimpleUserValidator.validate(builder, createUserRequest.getUser());
 
-            return new SimpleCreateUserRequestValidator(createUserRequest, builder.build(), builder.getFieldViolationsCount() > 0);
+            return new SimpleUserIdValidator(createUserRequest, builder.build(), builder.getFieldViolationsCount() > 0);
         }
 
         public static void validateUserId(BadRequest.Builder badRequestBuilder, String userId) {
