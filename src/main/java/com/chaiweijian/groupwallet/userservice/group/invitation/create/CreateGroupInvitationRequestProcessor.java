@@ -66,6 +66,7 @@ public class CreateGroupInvitationRequestProcessor {
                             .build());
 
             newGroupInvitation
+                    .selectKey((key, value) -> value.getName())
                     .repartition(Repartitioned.with(Serdes.String(), groupInvitationSerde))
                     .to("groupwallet.userservice.GroupInvitationCreated-events", Produced.with(Serdes.String(), groupInvitationSerde));
 

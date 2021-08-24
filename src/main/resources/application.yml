@@ -31,6 +31,26 @@ spring.cloud.stream.bindings:
     destination: groupwallet.groupservice.GroupAggregate-stream
   createGroupInvitation-out-0:
     destination: groupwallet.userservice.CreateGroupInvitation-responses
+  aggregateGroupInvitation-in-0:
+    destination: groupwallet.userservice.GroupInvitationCreated-events
+  aggregateGroupInvitation-in-1:
+    destination: groupwallet.userservice.GroupInvitationAccepted-events
+  aggregateGroupInvitation-in-2:
+    destination: groupwallet.userservice.GroupInvitationRejected-events
+  aggregateGroupInvitation-out-0:
+    destination: groupwallet.userservice.GroupInvitationAggregate-stream
+  acceptGroupInvitation-in-0:
+    destination: groupwallet.userservice.AcceptGroupInvitation-requests
+  acceptGroupInvitation-in-1:
+    destination: groupwallet.userservice.GroupInvitationAggregate-stream
+  acceptGroupInvitation-out-0:
+    destination: groupwallet.userservice.AcceptGroupInvitation-responses
+  rejectGroupInvitation-in-0:
+    destination: groupwallet.userservice.RejectGroupInvitation-requests
+  rejectGroupInvitation-in-1:
+    destination: groupwallet.userservice.GroupInvitationAggregate-stream
+  rejectGroupInvitation-out-0:
+    destination: groupwallet.userservice.RejectGroupInvitation-responses
 
 spring.cloud.stream.kafka.streams.binder.functions:
   createUser:
@@ -43,6 +63,10 @@ spring.cloud.stream.kafka.streams.binder.functions:
     application-id: groupwallet.userservice.updateUser-app
   createGroupInvitation:
     application-id: groupwallet.userservice.createGroupInvitation-app
+  acceptGroupInvitation:
+    application-id: groupwallet.userservice.acceptGroupInvitation-app
+  rejectGroupInvitation:
+    application-id: groupwallet.userservice.rejectGroupInvitation-app
 
 spring.cloud.stream.kafka.streams.binder:
   configuration:
@@ -52,7 +76,7 @@ spring.cloud.stream.kafka.streams.binder:
 spring:
   cloud:
     function:
-      definition: createUser;aggregateUser;mapUidToName;updateUser;createGroupInvitation
+      definition: createUser;aggregateUser;mapUidToName;updateUser;createGroupInvitation;aggregateGroupInvitation;acceptGroupInvitation;rejectGroupInvitation
   kafka:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
