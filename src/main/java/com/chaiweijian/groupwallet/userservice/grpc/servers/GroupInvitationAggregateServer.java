@@ -17,7 +17,7 @@ package com.chaiweijian.groupwallet.userservice.grpc.servers;
 import com.chaiweijian.groupwallet.userservice.v1.AcceptGroupInvitationRequest;
 import com.chaiweijian.groupwallet.userservice.v1.CreateGroupInvitationRequest;
 import com.chaiweijian.groupwallet.userservice.v1.GroupInvitation;
-import com.chaiweijian.groupwallet.userservice.v1.GroupInvitationServiceGrpc;
+import com.chaiweijian.groupwallet.userservice.v1.GroupInvitationAggregateServiceGrpc;
 import com.chaiweijian.groupwallet.userservice.v1.RejectGroupInvitationRequest;
 import com.google.protobuf.Any;
 import com.google.protobuf.InvalidProtocolBufferException;
@@ -37,15 +37,15 @@ import java.util.concurrent.TimeUnit;
 
 @GrpcService
 @Slf4j
-public class GroupInvitationServer extends GroupInvitationServiceGrpc.GroupInvitationServiceImplBase {
+public class GroupInvitationAggregateServer extends GroupInvitationAggregateServiceGrpc.GroupInvitationAggregateServiceImplBase {
 
     private final ReplyingKafkaTemplate<String, CreateGroupInvitationRequest, Status> createGroupInvitationTemplate;
     private final ReplyingKafkaTemplate<String, AcceptGroupInvitationRequest, Status> acceptGroupInvitationTemplate;
     private final ReplyingKafkaTemplate<String, RejectGroupInvitationRequest, Status> rejectGroupInvitationTemplate;
 
-    public GroupInvitationServer(ReplyingKafkaTemplate<String, CreateGroupInvitationRequest, Status> createGroupInvitationTemplate,
-                                 ReplyingKafkaTemplate<String, AcceptGroupInvitationRequest, Status> acceptGroupInvitationTemplate,
-                                 ReplyingKafkaTemplate<String, RejectGroupInvitationRequest, Status> rejectGroupInvitationTemplate) {
+    public GroupInvitationAggregateServer(ReplyingKafkaTemplate<String, CreateGroupInvitationRequest, Status> createGroupInvitationTemplate,
+                                          ReplyingKafkaTemplate<String, AcceptGroupInvitationRequest, Status> acceptGroupInvitationTemplate,
+                                          ReplyingKafkaTemplate<String, RejectGroupInvitationRequest, Status> rejectGroupInvitationTemplate) {
         this.createGroupInvitationTemplate = createGroupInvitationTemplate;
         this.acceptGroupInvitationTemplate = acceptGroupInvitationTemplate;
         this.rejectGroupInvitationTemplate = rejectGroupInvitationTemplate;
@@ -63,7 +63,7 @@ public class GroupInvitationServer extends GroupInvitationServiceGrpc.GroupInvit
             ConsumerRecord<String, Status> consumerRecord = replyFuture.get(10, TimeUnit.SECONDS);
             handleResponse(consumerRecord, responseObserver);
         } catch (Exception exception) {
-            log.error("GroupInvitationServer - createGroupInvitation Error", exception);
+            log.error("GroupInvitationAggregateServer - createGroupInvitation Error", exception);
             responseObserver.onError(new StatusException(io.grpc.Status.INTERNAL.withCause(exception)));
         }
     }
@@ -80,7 +80,7 @@ public class GroupInvitationServer extends GroupInvitationServiceGrpc.GroupInvit
             ConsumerRecord<String, Status> consumerRecord = replyFuture.get(10, TimeUnit.SECONDS);
             handleResponse(consumerRecord, responseObserver);
         } catch (Exception exception) {
-            log.error("GroupInvitationServer - rejectGroupInvitation Error", exception);
+            log.error("GroupInvitationAggregateServer - rejectGroupInvitation Error", exception);
             responseObserver.onError(new StatusException(io.grpc.Status.INTERNAL.withCause(exception)));
         }
     }
@@ -97,7 +97,7 @@ public class GroupInvitationServer extends GroupInvitationServiceGrpc.GroupInvit
             ConsumerRecord<String, Status> consumerRecord = replyFuture.get(10, TimeUnit.SECONDS);
             handleResponse(consumerRecord, responseObserver);
         } catch (Exception exception) {
-            log.error("GroupInvitationServer - acceptGroupInvitation Error", exception);
+            log.error("GroupInvitationAggregateServer - acceptGroupInvitation Error", exception);
             responseObserver.onError(new StatusException(io.grpc.Status.INTERNAL.withCause(exception)));
         }
     }
