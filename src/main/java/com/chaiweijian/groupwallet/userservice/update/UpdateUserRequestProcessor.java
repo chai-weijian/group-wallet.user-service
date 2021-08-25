@@ -16,6 +16,7 @@ package com.chaiweijian.groupwallet.userservice.update;
 
 import com.chaiweijian.groupwallet.userservice.util.BadRequestUtil;
 import com.chaiweijian.groupwallet.userservice.util.OkStatusUtil;
+import com.chaiweijian.groupwallet.userservice.util.RequestAndExistingUser;
 import com.chaiweijian.groupwallet.userservice.util.SimpleUserFormatter;
 import com.chaiweijian.groupwallet.userservice.util.StreamValidationResult;
 import com.chaiweijian.groupwallet.userservice.util.UserAggregateUtil;
@@ -31,7 +32,6 @@ import com.google.rpc.Code;
 import com.google.rpc.ErrorInfo;
 import com.google.rpc.Status;
 import io.confluent.kafka.streams.serdes.protobuf.KafkaProtobufSerde;
-import lombok.Data;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.kstream.GlobalKTable;
 import org.apache.kafka.streams.kstream.KStream;
@@ -53,17 +53,14 @@ public class UpdateUserRequestProcessor {
     public BiFunction<KStream<String, UpdateUserRequest>, GlobalKTable<String, User>, KStream<String, Status>> updateUser() {
         return (updateUserRequest, userAggregateStore) -> {
 
-            var userExistsValidationResult = validateUserExists(updateUserRequest, userAggregateStore);
+            var joined = updateUserRequest.leftJoin(userAggregateStore, (leftKey, leftValue) -> leftKey, RequestAndExistingUser::new);
 
-            var updateRequestAndExistingUser = userExistsValidationResult.getPassedStream()
-                    .leftJoin(userAggregateStore,
-                            (leftKey, leftValue) -> leftKey,
-                            UpdateRequestAndExistingUser::new);
+            var userExistsValidationResult = validateUserExists(joined);
 
-            var etagValidationResult = validateEtag(updateRequestAndExistingUser);
+            var etagValidationResult = validateEtag(userExistsValidationResult.getPassedStream());
 
             var updatedFieldMask = etagValidationResult.getPassedStream()
-                    .mapValues(value -> new UpdateRequestAndExistingUser(
+                    .mapValues(value -> new RequestAndExistingUser<>(
                             value.getRequest().toBuilder().setUpdateMask(removeImmutableField(value.getRequest().getUpdateMask())).build(),
                             value.getCurrentUser()));
 
@@ -96,30 +93,28 @@ public class UpdateUserRequestProcessor {
         };
     }
 
-    private StreamValidationResult<String, UpdateUserRequest> validateUserExists(KStream<String, UpdateUserRequest> input, GlobalKTable<String, User> userAggregateStore) {
+    private StreamValidationResult<String, RequestAndExistingUser<UpdateUserRequest>> validateUserExists(KStream<String, RequestAndExistingUser<UpdateUserRequest>> input) {
         var validation = input
-                .leftJoin(userAggregateStore,
-                        (leftKey, leftValue) -> leftKey,
-                        UpdateRequestAndExistingUser::new);
+                .mapValues(value -> new ValidationResult<>(value).setPass(value.currentUserExists()));
 
         var failed = validation
-                .filterNot((key, value) -> value.currentUserExists())
-                .mapValues(UpdateRequestAndExistingUser::getRequest);
+                .filter((key, value) -> value.isFailed())
+                .mapValues(ValidationResult::getItem);
 
         var status = failed
                 .mapValues(value -> Status.newBuilder()
                         .setCode(Code.NOT_FOUND_VALUE)
-                        .setMessage(String.format("User with name %s does not exists.", value.getUser().getName()))
+                        .setMessage(String.format("User with name %s does not exists.", value.getRequest().getUser().getName()))
                         .build());
 
         var passed = validation
-                .filter(((key, value) -> value.currentUserExists()))
-                .mapValues(UpdateRequestAndExistingUser::getRequest);
+                .filter((key, value) -> value.isPassed())
+                .mapValues(ValidationResult::getItem);
 
         return new StreamValidationResult<>(passed, failed, status);
     }
 
-    private StreamValidationResult<String, UpdateRequestAndExistingUser> validateEtag(KStream<String, UpdateRequestAndExistingUser> input) {
+    private StreamValidationResult<String, RequestAndExistingUser<UpdateUserRequest>> validateEtag(KStream<String, RequestAndExistingUser<UpdateUserRequest>> input) {
         var etagValidation = input
                 .mapValues(value -> new ValidationResult<>(value).setPass(value.getRequest().getUser().getEtag().equals(value.getCurrentUser().getEtag())));
 
@@ -156,7 +151,7 @@ public class UpdateUserRequestProcessor {
         return FieldMaskUtil.subtract(fieldMask, OUTPUT_ONLY);
     }
 
-    private static StreamValidationResult<String, UpdateRequestAndExistingUser> validateFieldMask(KStream<String, UpdateRequestAndExistingUser> input) {
+    private static StreamValidationResult<String, RequestAndExistingUser<UpdateUserRequest>> validateFieldMask(KStream<String, RequestAndExistingUser<UpdateUserRequest>> input) {
         var validation = input
                 .mapValues(value -> new ValidationResult<>(value).setPass(FieldMaskUtil.isValid(User.class, value.getRequest().getUpdateMask())));
 
@@ -178,15 +173,5 @@ public class UpdateUserRequestProcessor {
                 .mapValues(ValidationResult::getItem);
 
         return new StreamValidationResult<>(passed, failed, status);
-    }
-
-    @Data
-    public static class UpdateRequestAndExistingUser {
-        private final UpdateUserRequest request;
-        private final User currentUser;
-
-        public boolean currentUserExists() {
-            return currentUser != null;
-        }
     }
 }
