@@ -15,6 +15,7 @@
 package com.chaiweijian.groupwallet.userservice.group.invitation.aggregate;
 
 import com.chaiweijian.groupwallet.userservice.serialization.CustomSerdes;
+import com.chaiweijian.groupwallet.userservice.util.ResourceNameUtil;
 import com.chaiweijian.groupwallet.userservice.v1.GroupInvitation;
 import io.confluent.kafka.streams.serdes.protobuf.KafkaProtobufSerde;
 import org.apache.kafka.common.serialization.Serde;
@@ -30,7 +31,6 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
-import java.util.regex.Pattern;
 
 @Component
 public class GroupInvitationIndexProcessor {
@@ -48,7 +48,7 @@ public class GroupInvitationIndexProcessor {
     @Bean
     public Consumer<KStream<String, GroupInvitation>> buildGroupInvitationIndex() {
         return groupInvitationCreated -> groupInvitationCreated
-                .selectKey(((key, value) -> getParentName(value.getName())))
+                .selectKey(((key, value) -> ResourceNameUtil.getGroupInvitationParentName(value.getName())))
                 .repartition(Repartitioned.with(Serdes.String(), groupInvitationSerde))
                 .groupByKey()
                 .aggregate(ArrayList::new, (aggKey, newValue, aggValue) -> buildIndex((ArrayList<String>) aggValue, newValue.getName()),
@@ -57,15 +57,7 @@ public class GroupInvitationIndexProcessor {
                                 .withValueSerde(listSerde));
     }
 
-    private static String getParentName(String name) {
-        var pattern = Pattern.compile("(users/[a-z0-9-]+)/groupInvitations/[a-z0-9-]+");
-        var matcher = pattern.matcher(name);
-        if (matcher.find()) {
-            return matcher.group(1);
-        } else {
-            throw new RuntimeException(String.format("Group Invitation with invalid name: %s", name));
-        }
-    }
+
 
     private ArrayList<String> buildIndex(ArrayList<String> aggValue, String newValue) {
         aggValue.add(0, newValue);
