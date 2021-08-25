@@ -14,18 +14,22 @@
 
 package com.chaiweijian.groupwallet.userservice.aggregate;
 
+import com.chaiweijian.groupwallet.userservice.util.ResourceNameUtil;
 import com.chaiweijian.groupwallet.userservice.util.UserAggregateUtil;
+import com.chaiweijian.groupwallet.userservice.v1.GroupInvitation;
 import com.chaiweijian.groupwallet.userservice.v1.User;
 import io.confluent.kafka.streams.serdes.protobuf.KafkaProtobufSerde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.utils.Bytes;
+import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Materialized;
+import org.apache.kafka.streams.kstream.Repartitioned;
 import org.apache.kafka.streams.state.KeyValueStore;
 import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Component;
 
-import java.util.function.BiFunction;
+import java.util.function.Function;
 
 @Component
 public class UserAggregateProcessor {
@@ -39,15 +43,20 @@ public class UserAggregateProcessor {
     // Maintain user aggregate by subscribing to all events that
     // affect a user.
     @Bean
-    public BiFunction<KStream<String, User>, KStream<String, User>, KStream<String, User>> aggregateUser() {
-        return (userCreated, userUpdated) -> {
+    public Function<KStream<String, User>, Function<KStream<String, User>, Function<KStream<String, GroupInvitation>, KStream<String, User>>>> aggregateUser() {
+        return userCreated -> userUpdated -> groupInvitationAccepted -> {
 
             var userCreatedEvent = userCreated.groupByKey();
             var userUpdatedEvent = userUpdated.groupByKey();
+            var groupInvitationAcceptedEvent = groupInvitationAccepted
+                    .map(((key, value) -> KeyValue.pair(ResourceNameUtil.getGroupInvitationParentName(value.getName()), value.getGroup())))
+                    .repartition(Repartitioned.with(Serdes.String(), Serdes.String()))
+                    .groupByKey();
 
             return userCreatedEvent
                     .cogroup(EventHandler::handleUserCreatedEvent)
                     .cogroup(userUpdatedEvent, EventHandler::handleUserUpdatedEvent)
+                    .cogroup(groupInvitationAcceptedEvent, EventHandler::handleGroupInvitationAcceptedEvent)
                     .aggregate(() -> null,
                         Materialized.<String, User, KeyValueStore<Bytes, byte[]>>as("groupwallet.userservice.UserAggregate-store")
                                 .withKeySerde(Serdes.String())
@@ -57,17 +66,23 @@ public class UserAggregateProcessor {
     }
 
     private static class EventHandler {
-
-        // Simply update aggregate version and return the new user
         public static User handleUserCreatedEvent(String key, User user, User init) {
             var aggregateVersion = 1;
             return user.toBuilder().setAggregateVersion(aggregateVersion).setEtag(UserAggregateUtil.calculateEtag(user.getName(), aggregateVersion)).build();
         }
 
-        // UserUpdated event provide a full user object, simply increment aggregate version and return it
         public static User handleUserUpdatedEvent(String key, User user, User init) {
             var aggregateVersion = init.getAggregateVersion() + 1;
             return user.toBuilder().setAggregateVersion(aggregateVersion).setEtag(UserAggregateUtil.calculateEtag(user.getName(), aggregateVersion)).build();
+        }
+
+        public static User handleGroupInvitationAcceptedEvent(String key, String group, User aggregate) {
+            var aggregateVersion = aggregate.getAggregateVersion() + 1;
+            return aggregate.toBuilder()
+                    .addGroups(group)
+                    .setAggregateVersion(aggregateVersion)
+                    .setEtag(UserAggregateUtil.calculateEtag(aggregate.getName(), aggregateVersion))
+                    .build();
         }
     }
 }

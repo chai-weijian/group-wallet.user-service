@@ -18,6 +18,8 @@ spring.cloud.stream.bindings:
     destination: groupwallet.userservice.UserCreated-events
   aggregateUser-in-1:
     destination: groupwallet.userservice.UserUpdated-events
+  aggregateUser-in-2:
+    destination: groupwallet.userservice.GroupInvitationAccepted-events
   aggregateUser-out-0:
     destination: groupwallet.userservice.UserAggregate-stream
   mapUidToName-in-0:
