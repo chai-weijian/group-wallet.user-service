@@ -17,6 +17,7 @@ package com.chaiweijian.groupwallet.userservice.grpc.servers;
 import com.chaiweijian.groupwallet.userservice.v1.CreateUserRequest;
 import com.chaiweijian.groupwallet.userservice.v1.FindUserRequest;
 import com.chaiweijian.groupwallet.userservice.v1.GetUserRequest;
+import com.chaiweijian.groupwallet.userservice.v1.RemoveGroupRequest;
 import com.chaiweijian.groupwallet.userservice.v1.UpdateUserRequest;
 import com.chaiweijian.groupwallet.userservice.v1.User;
 import com.chaiweijian.groupwallet.userservice.v1.UserAggregateServiceGrpc;
@@ -45,13 +46,16 @@ public class UserAggregateServer extends UserAggregateServiceGrpc.UserAggregateS
 
     private final ReplyingKafkaTemplate<String, CreateUserRequest, Status> createUserTemplate;
     private final ReplyingKafkaTemplate<String, UpdateUserRequest, Status> updateUserTemplate;
+    private final ReplyingKafkaTemplate<String, RemoveGroupRequest, Status> removeGroupTemplate;
     private final InteractiveQueryService interactiveQueryService;
 
     public UserAggregateServer(ReplyingKafkaTemplate<String, CreateUserRequest, Status> createUserTemplate,
                                ReplyingKafkaTemplate<String, UpdateUserRequest, Status> updateUserTemplate,
+                               ReplyingKafkaTemplate<String, RemoveGroupRequest, Status> removeGroupTemplate,
                                InteractiveQueryService interactiveQueryService) {
         this.createUserTemplate = createUserTemplate;
         this.updateUserTemplate = updateUserTemplate;
+        this.removeGroupTemplate = removeGroupTemplate;
         this.interactiveQueryService = interactiveQueryService;
     }
 
@@ -119,6 +123,23 @@ public class UserAggregateServer extends UserAggregateServiceGrpc.UserAggregateS
                             .setCode(Code.NOT_FOUND_VALUE)
                             .setMessage(String.format("%s does not exists.", name))
                             .build()));
+        }
+    }
+
+    @Override
+    public void removeGroup(RemoveGroupRequest request, StreamObserver<User> responseObserver) {
+        ProducerRecord<String, RemoveGroupRequest> record = new ProducerRecord<>(
+                "groupwallet.userservice.RemoveGroup-requests",
+                request.getUser(),
+                request);
+
+        RequestReplyFuture<String, RemoveGroupRequest, Status> replyFuture = removeGroupTemplate.sendAndReceive(record);
+        try {
+            ConsumerRecord<String, Status> consumerRecord = replyFuture.get(10, TimeUnit.SECONDS);
+            handleResponse(consumerRecord, responseObserver);
+        } catch (Exception exception) {
+            log.error("UserAggregateServer - removeGroup Error", exception);
+            responseObserver.onError(new StatusException(io.grpc.Status.INTERNAL.withCause(exception)));
         }
     }
 

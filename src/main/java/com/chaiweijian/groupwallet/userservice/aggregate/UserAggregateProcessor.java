@@ -30,6 +30,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Component;
 
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Component
 public class UserAggregateProcessor {
@@ -43,8 +44,8 @@ public class UserAggregateProcessor {
     // Maintain user aggregate by subscribing to all events that
     // affect a user.
     @Bean
-    public Function<KStream<String, User>, Function<KStream<String, User>, Function<KStream<String, GroupInvitation>, KStream<String, User>>>> aggregateUser() {
-        return userCreated -> userUpdated -> groupInvitationAccepted -> {
+    public Function<KStream<String, User>, Function<KStream<String, User>, Function<KStream<String, GroupInvitation>, Function<KStream<String, String>, KStream<String, User>>>>> aggregateUser() {
+        return userCreated -> userUpdated -> groupInvitationAccepted -> groupRemoved -> {
 
             var userCreatedEvent = userCreated.groupByKey();
             var userUpdatedEvent = userUpdated.groupByKey();
@@ -52,11 +53,13 @@ public class UserAggregateProcessor {
                     .map(((key, value) -> KeyValue.pair(ResourceNameUtil.getGroupInvitationParentName(value.getName()), value.getGroup())))
                     .repartition(Repartitioned.with(Serdes.String(), Serdes.String()))
                     .groupByKey();
+            var groupRemovedEvent = groupRemoved.groupByKey();
 
             return userCreatedEvent
                     .cogroup(EventHandler::handleUserCreatedEvent)
                     .cogroup(userUpdatedEvent, EventHandler::handleUserUpdatedEvent)
                     .cogroup(groupInvitationAcceptedEvent, EventHandler::handleGroupInvitationAcceptedEvent)
+                    .cogroup(groupRemovedEvent, EventHandler::handleGroupRemovedEvent)
                     .aggregate(() -> null,
                         Materialized.<String, User, KeyValueStore<Bytes, byte[]>>as("groupwallet.userservice.UserAggregate-store")
                                 .withKeySerde(Serdes.String())
@@ -80,6 +83,16 @@ public class UserAggregateProcessor {
             var aggregateVersion = aggregate.getAggregateVersion() + 1;
             return aggregate.toBuilder()
                     .addGroups(group)
+                    .setAggregateVersion(aggregateVersion)
+                    .setEtag(UserAggregateUtil.calculateEtag(aggregate.getName(), aggregateVersion))
+                    .build();
+        }
+
+        public static User handleGroupRemovedEvent(String key, String group, User aggregate) {
+            var aggregateVersion = aggregate.getAggregateVersion() + 1;
+            return aggregate.toBuilder()
+                    .clearGroups()
+                    .addAllGroups(aggregate.getGroupsList().stream().filter(g -> !g.equals(group)).collect(Collectors.toList()))
                     .setAggregateVersion(aggregateVersion)
                     .setEtag(UserAggregateUtil.calculateEtag(aggregate.getName(), aggregateVersion))
                     .build();

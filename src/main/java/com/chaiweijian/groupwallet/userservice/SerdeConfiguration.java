@@ -26,6 +26,7 @@ import com.google.rpc.Status;
 import io.confluent.kafka.streams.serdes.protobuf.KafkaProtobufSerde;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import com.chaiweijian.groupwallet.userservice.v1.RemoveGroupRequest;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -67,6 +68,13 @@ public class SerdeConfiguration {
     public KafkaProtobufSerde<GroupInvitation> groupInvitationKafkaProtobufSerde() {
         final KafkaProtobufSerde<GroupInvitation> protobufSerde = new KafkaProtobufSerde<>();
         protobufSerde.configure(getSerdeConfig(GroupInvitation.class.getCanonicalName()), false);
+        return protobufSerde;
+    }
+
+    @Bean
+    public KafkaProtobufSerde<RemoveGroupRequest> removeGroupRequestKafkaProtobufSerde() {
+        final KafkaProtobufSerde<RemoveGroupRequest> protobufSerde = new KafkaProtobufSerde<>();
+        protobufSerde.configure(getSerdeConfig(RemoveGroupRequest.class.getCanonicalName()), false);
         return protobufSerde;
     }
 
