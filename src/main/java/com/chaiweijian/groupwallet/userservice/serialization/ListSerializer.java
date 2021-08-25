@@ -16,9 +16,6 @@
  */
 package com.chaiweijian.groupwallet.userservice.serialization;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.serialization.DoubleSerializer;
@@ -34,7 +31,9 @@ import org.apache.kafka.common.utils.Utils;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 

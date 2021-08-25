@@ -15,7 +15,6 @@
 package com.chaiweijian.groupwallet.userservice.group.invitation.accept;
 
 import com.chaiweijian.groupwallet.userservice.v1.AcceptGroupInvitationRequest;
-import com.chaiweijian.groupwallet.userservice.v1.CreateGroupInvitationRequest;
 import com.google.rpc.Status;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

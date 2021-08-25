@@ -14,9 +14,9 @@
 
 package com.chaiweijian.groupwallet.userservice.group.invitation.aggregate;
 
+import com.chaiweijian.groupwallet.userservice.serialization.CustomSerdes;
 import com.chaiweijian.groupwallet.userservice.v1.GroupInvitation;
 import io.confluent.kafka.streams.serdes.protobuf.KafkaProtobufSerde;
-import com.chaiweijian.groupwallet.userservice.serialization.CustomSerdes;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.utils.Bytes;
@@ -30,7 +30,6 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.regex.Pattern;
 
 @Component
