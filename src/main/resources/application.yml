@@ -39,6 +39,8 @@ spring.cloud.stream.bindings:
     destination: groupwallet.userservice.GroupInvitationRejected-events
   aggregateGroupInvitation-out-0:
     destination: groupwallet.userservice.GroupInvitationAggregate-stream
+  buildGroupInvitationIndex-in-0:
+    destination: groupwallet.userservice.GroupInvitationCreated-events
   acceptGroupInvitation-in-0:
     destination: groupwallet.userservice.AcceptGroupInvitation-requests
   acceptGroupInvitation-in-1:
@@ -63,6 +65,10 @@ spring.cloud.stream.kafka.streams.binder.functions:
     application-id: groupwallet.userservice.updateUser-app
   createGroupInvitation:
     application-id: groupwallet.userservice.createGroupInvitation-app
+  aggregateGroupInvitation:
+    application-id: groupwallet.userservice.aggregateGroupInvitation-app
+  buildGroupInvitationIndex:
+    application-id: groupwallet.userservice.buildGroupInvitationIndex-app
   acceptGroupInvitation:
     application-id: groupwallet.userservice.acceptGroupInvitation-app
   rejectGroupInvitation:
@@ -76,7 +82,7 @@ spring.cloud.stream.kafka.streams.binder:
 spring:
   cloud:
     function:
-      definition: createUser;aggregateUser;mapUidToName;updateUser;createGroupInvitation;aggregateGroupInvitation;acceptGroupInvitation;rejectGroupInvitation
+      definition: createUser;aggregateUser;mapUidToName;updateUser;createGroupInvitation;aggregateGroupInvitation;buildGroupInvitationIndex;acceptGroupInvitation;rejectGroupInvitation
   kafka:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer

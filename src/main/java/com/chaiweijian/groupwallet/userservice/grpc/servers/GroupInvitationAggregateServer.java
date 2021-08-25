@@ -14,10 +14,13 @@
 
 package com.chaiweijian.groupwallet.userservice.grpc.servers;
 
+import com.chaiweijian.groupwallet.userservice.util.PaginationUtil;
 import com.chaiweijian.groupwallet.userservice.v1.AcceptGroupInvitationRequest;
 import com.chaiweijian.groupwallet.userservice.v1.CreateGroupInvitationRequest;
 import com.chaiweijian.groupwallet.userservice.v1.GroupInvitation;
 import com.chaiweijian.groupwallet.userservice.v1.GroupInvitationAggregateServiceGrpc;
+import com.chaiweijian.groupwallet.userservice.v1.ListGroupInvitationsRequest;
+import com.chaiweijian.groupwallet.userservice.v1.ListGroupInvitationsResponse;
 import com.chaiweijian.groupwallet.userservice.v1.RejectGroupInvitationRequest;
 import com.google.protobuf.Any;
 import com.google.protobuf.InvalidProtocolBufferException;
@@ -30,10 +33,15 @@ import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.server.service.GrpcService;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.streams.state.QueryableStoreTypes;
+import org.apache.kafka.streams.state.ReadOnlyKeyValueStore;
+import org.springframework.cloud.stream.binder.kafka.streams.InteractiveQueryService;
 import org.springframework.kafka.requestreply.ReplyingKafkaTemplate;
 import org.springframework.kafka.requestreply.RequestReplyFuture;
 
+import java.util.ArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @GrpcService
 @Slf4j
@@ -42,13 +50,52 @@ public class GroupInvitationAggregateServer extends GroupInvitationAggregateServ
     private final ReplyingKafkaTemplate<String, CreateGroupInvitationRequest, Status> createGroupInvitationTemplate;
     private final ReplyingKafkaTemplate<String, AcceptGroupInvitationRequest, Status> acceptGroupInvitationTemplate;
     private final ReplyingKafkaTemplate<String, RejectGroupInvitationRequest, Status> rejectGroupInvitationTemplate;
+    private final InteractiveQueryService interactiveQueryService;
 
     public GroupInvitationAggregateServer(ReplyingKafkaTemplate<String, CreateGroupInvitationRequest, Status> createGroupInvitationTemplate,
                                           ReplyingKafkaTemplate<String, AcceptGroupInvitationRequest, Status> acceptGroupInvitationTemplate,
-                                          ReplyingKafkaTemplate<String, RejectGroupInvitationRequest, Status> rejectGroupInvitationTemplate) {
+                                          ReplyingKafkaTemplate<String, RejectGroupInvitationRequest, Status> rejectGroupInvitationTemplate,
+                                          InteractiveQueryService interactiveQueryService) {
         this.createGroupInvitationTemplate = createGroupInvitationTemplate;
         this.acceptGroupInvitationTemplate = acceptGroupInvitationTemplate;
         this.rejectGroupInvitationTemplate = rejectGroupInvitationTemplate;
+        this.interactiveQueryService = interactiveQueryService;
+    }
+
+    @Override
+    public void listGroupInvitations(ListGroupInvitationsRequest request, StreamObserver<ListGroupInvitationsResponse> responseObserver) {
+        final ReadOnlyKeyValueStore<String, ArrayList<String>> groupInvitationIndexStore
+                = interactiveQueryService.getQueryableStore("groupwallet.userservice.GroupInvitation-index", QueryableStoreTypes.keyValueStore());
+
+        var groupInvitationIndex = groupInvitationIndexStore.get(request.getParent());
+
+        if (groupInvitationIndex == null) {
+            responseObserver.onError(StatusProto.toStatusRuntimeException(
+                    Status.newBuilder()
+                            .setCode(Code.NOT_FOUND_VALUE)
+                            .setMessage(String.format("No group invitations for user %s.", request.getParent()))
+                            .build()));
+            return;
+        }
+
+        final ReadOnlyKeyValueStore<String, GroupInvitation> groupInvitationStore
+                = interactiveQueryService.getQueryableStore("groupwallet.userservice.GroupInvitationAggregate-store", QueryableStoreTypes.keyValueStore());
+
+        int index = 0;
+        if (!request.getPageToken().isEmpty()) {
+            index = PaginationUtil.decodePageToken(request.getPageToken());
+        }
+
+        var builder = ListGroupInvitationsResponse.newBuilder()
+                .addAllGroupInvitations(groupInvitationIndex.subList(index, Math.min(index + request.getPageSize(), groupInvitationIndex.size()))
+                        .stream().map(groupInvitationStore::get).collect(Collectors.toList()));
+
+        if (index + request.getPageSize() < groupInvitationIndex.size()) {
+            builder.setNextPageToken(PaginationUtil.encodePageToken(index + request.getPageSize()));
+        }
+
+        responseObserver.onNext(builder.build());
+        responseObserver.onCompleted();
     }
 
     @Override
