@@ -28,6 +28,7 @@ import org.apache.kafka.streams.kstream.Repartitioned;
 import org.apache.kafka.streams.state.KeyValueStore;
 import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Component;
+import com.chaiweijian.groupwallet.groupservice.v1.Group;
 
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -44,8 +45,8 @@ public class UserAggregateProcessor {
     // Maintain user aggregate by subscribing to all events that
     // affect a user.
     @Bean
-    public Function<KStream<String, User>, Function<KStream<String, User>, Function<KStream<String, GroupInvitation>, Function<KStream<String, String>, KStream<String, User>>>>> aggregateUser() {
-        return userCreated -> userUpdated -> groupInvitationAccepted -> groupRemoved -> {
+    public Function<KStream<String, User>, Function<KStream<String, User>, Function<KStream<String, GroupInvitation>, Function<KStream<String, String>, Function<KStream<String, Group>, KStream<String, User>>>>>> aggregateUser() {
+        return userCreated -> userUpdated -> groupInvitationAccepted -> groupRemoved -> groupCreated -> {
 
             var userCreatedEvent = userCreated.groupByKey();
             var userUpdatedEvent = userUpdated.groupByKey();
@@ -54,12 +55,17 @@ public class UserAggregateProcessor {
                     .repartition(Repartitioned.with(Serdes.String(), Serdes.String()))
                     .groupByKey();
             var groupRemovedEvent = groupRemoved.groupByKey();
+            var groupCreatedEvent = groupCreated
+                    .map((key, value) -> KeyValue.pair(value.getOwner(), value.getName()))
+                    .repartition(Repartitioned.with(Serdes.String(), Serdes.String()))
+                    .groupByKey();
 
             return userCreatedEvent
                     .cogroup(EventHandler::handleUserCreatedEvent)
                     .cogroup(userUpdatedEvent, EventHandler::handleUserUpdatedEvent)
                     .cogroup(groupInvitationAcceptedEvent, EventHandler::handleGroupInvitationAcceptedEvent)
                     .cogroup(groupRemovedEvent, EventHandler::handleGroupRemovedEvent)
+                    .cogroup(groupCreatedEvent, EventHandler::handleGroupCreatedEvent)
                     .aggregate(() -> null,
                         Materialized.<String, User, KeyValueStore<Bytes, byte[]>>as("groupwallet.userservice.UserAggregate-store")
                                 .withKeySerde(Serdes.String())
@@ -93,6 +99,15 @@ public class UserAggregateProcessor {
             return aggregate.toBuilder()
                     .clearGroups()
                     .addAllGroups(aggregate.getGroupsList().stream().filter(g -> !g.equals(group)).collect(Collectors.toList()))
+                    .setAggregateVersion(aggregateVersion)
+                    .setEtag(UserAggregateUtil.calculateEtag(aggregate.getName(), aggregateVersion))
+                    .build();
+        }
+
+        public static User handleGroupCreatedEvent(String key, String group, User aggregate) {
+            var aggregateVersion = aggregate.getAggregateVersion() + 1;
+            return aggregate.toBuilder()
+                    .addGroups(group)
                     .setAggregateVersion(aggregateVersion)
                     .setEtag(UserAggregateUtil.calculateEtag(aggregate.getName(), aggregateVersion))
                     .build();
