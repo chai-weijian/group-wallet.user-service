@@ -26,6 +26,7 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.rpc.Code;
 import com.google.rpc.Status;
 import io.grpc.StatusException;
+import io.grpc.StatusRuntimeException;
 import io.grpc.protobuf.StatusProto;
 import io.grpc.stub.StreamObserver;
 import lombok.extern.slf4j.Slf4j;
@@ -101,29 +102,41 @@ public class UserAggregateServer extends UserAggregateServiceGrpc.UserAggregateS
 
     // get user from queryable store
     private void getUser(String name, StreamObserver<User> responseObserver) {
-        if (!isValidUserNameFormat(name)) {
+        try {
+            var user = getUserFromAggregateStore(name);
+
+            if (user != null) {
+                responseObserver.onNext(user);
+                responseObserver.onCompleted();
+            } else {
+                responseObserver.onError(StatusProto.toStatusRuntimeException(
+                        Status.newBuilder()
+                                .setCode(Code.NOT_FOUND_VALUE)
+                                .setMessage(String.format("%s does not exists.", name))
+                                .build()));
+            }
+        } catch (StatusRuntimeException exception) {
             responseObserver.onError(StatusProto.toStatusRuntimeException(
                     Status.newBuilder()
                             .setCode(Code.INVALID_ARGUMENT_VALUE)
                             .setMessage(String.format("%s is not a valid name format.", name))
                             .build()));
         }
+    }
+
+    private User getUserFromAggregateStore(String name) throws StatusRuntimeException {
+        if (!isValidUserNameFormat(name)) {
+            throw StatusProto.toStatusRuntimeException(
+                    Status.newBuilder()
+                            .setCode(Code.INVALID_ARGUMENT_VALUE)
+                            .setMessage(String.format("%s is not a valid name format.", name))
+                            .build());
+        }
 
         final ReadOnlyKeyValueStore<String, User> userAggregateStore
                 = interactiveQueryService.getQueryableStore("groupwallet.userservice.UserAggregate-store", QueryableStoreTypes.keyValueStore());
 
-        var user = userAggregateStore.get(name);
-
-        if (user != null) {
-            responseObserver.onNext(user);
-            responseObserver.onCompleted();
-        } else {
-            responseObserver.onError(StatusProto.toStatusRuntimeException(
-                    Status.newBuilder()
-                            .setCode(Code.NOT_FOUND_VALUE)
-                            .setMessage(String.format("%s does not exists.", name))
-                            .build()));
-        }
+        return userAggregateStore.get(name);
     }
 
     @Override
@@ -145,6 +158,12 @@ public class UserAggregateServer extends UserAggregateServiceGrpc.UserAggregateS
 
     @Override
     public void updateUser(UpdateUserRequest request, StreamObserver<User> responseObserver) {
+        var user = getUserFromAggregateStore(request.getUser().getName());
+
+        if (user == null && request.getAllowMissing()) {
+            createUser(CreateUserRequest.newBuilder().setUserId(request.getUser().getName().replace("users/", "")).setUser(request.getUser()).build(), responseObserver);
+        }
+
         ProducerRecord<String, UpdateUserRequest> record = new ProducerRecord<>(
                 "groupwallet.userservice.UpdateUser-requests",
                 request.getUser().getName(),
